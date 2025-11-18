@@ -62,7 +62,7 @@ bool DeviceConfigManager::fetchAndApplyServerConfig(DeviceConfig& config) {
         config.maxInflowLastModified = serverConfig.maxInflowLastModified;
         config.forceUpdateLastModified = serverConfig.forceUpdateLastModified;
         config.ipAddressLastModified = serverConfig.ipAddressLastModified;
-        return false;  // No actual change
+        return true;  // Fetch succeeded, even though values didn't change
     }
 }
 
