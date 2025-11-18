@@ -6,30 +6,38 @@
 // ============================================================================
 
 int SyncMerge::findWinner(uint64_t api_ts, uint64_t local_ts, uint64_t self_ts) {
-    // Priority flag check: timestamp = 0 means "force accept"
-    // Priority order: api (1) > local (2) > self (3) when multiple have priority
+    // IMPORTANT: timestamp = 0 has different meanings:
+    // - For API (server): 0 = priority flag (server forcing this value)
+    // - For Local/Self: 0 = uninitialized (never been set, should lose)
+    //
+    // Priority flag (timestamp=0) is ONLY used when SENDING to server.
+    // On device-side merge, only API timestamp=0 means priority.
 
-    if (api_ts == 0 && local_ts == 0 && self_ts == 0) {
-        // All have priority flag - API wins by default
-        return 1;
-    }
-
+    // If API has priority flag (timestamp=0), API always wins
     if (api_ts == 0) {
-        // API has priority flag - API wins
+        DEBUG_PRINTLN("[Merge] API has priority flag (ts=0), API wins");
         return 1;
     }
 
-    if (local_ts == 0) {
-        // Local has priority flag - Local wins
-        return 2;
+    // For Local and Self, timestamp=0 means "not set" - exclude from comparison
+    bool local_is_set = (local_ts > 0);
+    bool self_is_set = (self_ts > 0);
+
+    // If only one source is set, it wins by default
+    if (!local_is_set && !self_is_set) {
+        // Neither local nor self set - API wins
+        return 1;
+    }
+    if (!local_is_set && self_is_set) {
+        // Only self is set - compare API vs Self
+        return (self_ts > api_ts) ? 3 : 1;
+    }
+    if (local_is_set && !self_is_set) {
+        // Only local is set - compare API vs Local
+        return (local_ts > api_ts) ? 2 : 1;
     }
 
-    if (self_ts == 0) {
-        // Self has priority flag - Self wins
-        return 3;
-    }
-
-    // No priority flags - use Last-Write-Wins (newest timestamp)
+    // All three are set - use Last-Write-Wins (newest timestamp)
     uint64_t newest = api_ts;
     int winner = 1;
 
