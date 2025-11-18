@@ -379,11 +379,29 @@ bool connectToBackend() {
         Serial.println("[Main] Device logged in successfully");
     }
 
-    // Handle device coming online - sync time and config based on priority flag
-    // If device_config_sync_status = true: fetches FROM server
-    // If device_config_sync_status = false: sends TO server with priority
-    displayManager.showMessage("Backend", "Syncing...", 0);
-    apiClient.onDeviceOnline(deviceConfig);
+    // Launch async time sync (non-blocking - happens in background)
+    // Device will start working immediately, sync completes in background
+    displayManager.showMessage("Backend", "Connected", 2000);
+    Serial.println("[Main] Launching async time sync in background...");
+
+    // Create async task for time sync (non-blocking)
+    xTaskCreate(
+        [](void* param) {
+            APIClient* client = (APIClient*)param;
+            Serial.println("[AsyncTask] Time sync started");
+            if (client->syncTimeWithServer()) {
+                Serial.println("[AsyncTask] Time synced successfully");
+            } else {
+                Serial.println("[AsyncTask] Time sync failed - will retry in periodic tasks");
+            }
+            vTaskDelete(NULL);
+        },
+        "TimeSync",
+        4096,
+        &apiClient,
+        1,
+        nullptr
+    );
 
     // Initialize last synced config (oldData = newData)
     lastSyncedConfig = deviceConfig;
@@ -434,6 +452,15 @@ void uploadTelemetryTask(void* parameter) {
         return;
     }
 
+    // Don't send data if time is not synced (timestamps would be invalid)
+    if (!apiClient.isTimeSynced()) {
+        Serial.println("[AsyncTask] Cannot upload telemetry - time not synced yet");
+        activeServerTasks--;  // Decrement before exit
+        telemetryTaskHandle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
     float waterLevel = sensorManager.getWaterLevel();
     float currInflow = sensorManager.getCurrentInflow();
     int pumpStatus = relayController.getPumpStatus();
@@ -466,6 +493,16 @@ void uploadControlTask(void* parameter) {
     // Don't attempt server calls in AP mode (no internet) or when not authenticated
     if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
         Serial.println("[AsyncTask] Cannot upload control - not in client mode or not authenticated");
+        delete jsonPayload;  // Free allocated memory before exit
+        activeServerTasks--;  // Decrement before exit
+        controlUploadTaskHandle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Don't send data if time is not synced (timestamps would be invalid)
+    if (!apiClient.isTimeSynced()) {
+        Serial.println("[AsyncTask] Cannot upload control - time not synced yet");
         delete jsonPayload;  // Free allocated memory before exit
         activeServerTasks--;  // Decrement before exit
         controlUploadTaskHandle = NULL;
@@ -702,6 +739,15 @@ void syncConfigToServerTask(void* parameter) {
     // Don't attempt server calls in AP mode (no internet) or when not authenticated
     if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
         Serial.println("[AsyncTask] Cannot sync config - not in client mode or not authenticated");
+        activeServerTasks--;  // Decrement before exit
+        configSyncTaskHandle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Don't send data if time is not synced (timestamps would be invalid)
+    if (!apiClient.isTimeSynced()) {
+        Serial.println("[AsyncTask] Cannot sync config - time not synced yet");
         activeServerTasks--;  // Decrement before exit
         configSyncTaskHandle = NULL;
         vTaskDelete(NULL);
