@@ -1127,36 +1127,20 @@ void loop() {
         if (isConnected && !wasConnected) {
             Serial.println("[Main] Device transitioned to ONLINE");
 
-            // Take mutex before accessing deviceConfig
-            if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
-                apiClient.onDeviceOnline(deviceConfig);
+            // NOTE: Don't call apiClient.onDeviceOnline() here - it's BLOCKING with retries!
+            // The periodic sync tasks will handle syncing within 30 seconds (non-blocking).
+            // Just reset the sync timers to trigger sync quickly.
+            lastTelemetryUpload = millis() - TELEMETRY_UPLOAD_INTERVAL + 5000;  // Upload in 5s
+            lastConfigCheck = millis() - TELEMETRY_UPLOAD_INTERVAL + 5000;      // Fetch config in 5s
+            lastControlFetch = millis() - CONTROL_FETCH_INTERVAL + 10000;       // Fetch control in 10s
 
-                // Update last synced config (oldData = newData)
-                lastSyncedConfig = deviceConfig;
-
-                // Reapply config after sync
-                sensorManager.setTankConfig(
-                    deviceConfig.tankHeight,
-                    deviceConfig.tankWidth,
-                    deviceConfig.tankShape
-                );
-                displayManager.setTankSettings(
-                    deviceConfig.tankHeight,
-                    deviceConfig.tankWidth,
-                    deviceConfig.tankShape,
-                    deviceConfig.upperThreshold,
-                    deviceConfig.lowerThreshold
-                );
-                webServer.updateDeviceConfig(deviceConfig);
-
-                xSemaphoreGive(configMutex);
-            }
+            Serial.println("[Main] Scheduled async sync tasks to run soon");
         }
 
         // Device just went offline
         if (!isConnected && wasConnected) {
             Serial.println("[Main] Device transitioned to OFFLINE");
-            apiClient.onDeviceOffline();
+            apiClient.onDeviceOffline();  // This is non-blocking (just sets a flag)
         }
 
         wasConnected = isConnected;
