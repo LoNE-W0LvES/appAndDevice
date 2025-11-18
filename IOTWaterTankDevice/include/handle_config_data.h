@@ -73,6 +73,18 @@ public:
     bool getSensorFilter() const { return sensorFilter.value; }
     String getIpAddress() const { return ipAddress.value; }
 
+    // Get timestamps (after merge)
+    uint64_t getUpperThresholdTimestamp() const { return upperThreshold.lastModified; }
+    uint64_t getLowerThresholdTimestamp() const { return lowerThreshold.lastModified; }
+    uint64_t getTankHeightTimestamp() const { return tankHeight.lastModified; }
+    uint64_t getTankWidthTimestamp() const { return tankWidth.lastModified; }
+    uint64_t getTankShapeTimestamp() const { return tankShape.lastModified; }
+    uint64_t getUsedTotalTimestamp() const { return usedTotal.lastModified; }
+    uint64_t getMaxInflowTimestamp() const { return maxInflow.lastModified; }
+    uint64_t getForceUpdateTimestamp() const { return forceUpdate.lastModified; }
+    uint64_t getSensorFilterTimestamp() const { return sensorFilter.lastModified; }
+    uint64_t getIpAddressTimestamp() const { return ipAddress.lastModified; }
+
     // Set all values with priority flag for uploading to server
     void setAllPriority();
 
