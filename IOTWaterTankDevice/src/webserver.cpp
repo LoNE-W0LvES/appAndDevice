@@ -628,7 +628,6 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
         localUsedTotal, localUsedTotalTs,
         localMaxInflow, localMaxInflowTs,
         localForceUpdate, localForceUpdateTs,
-        localSensorFilter, localSensorFilterTs,
         localIpAddress, localIpAddressTs
     );
 

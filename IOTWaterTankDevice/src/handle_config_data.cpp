@@ -101,6 +101,7 @@ void ConfigDataHandler::updateSelf(float self_upperThreshold, float self_lowerTh
                                     float self_tankHeight, float self_tankWidth,
                                     const String& self_tankShape, float self_usedTotal,
                                     float self_maxInflow, bool self_forceUpdate,
+                                    const String& self_ipAddress) {
     uint64_t now = millis();
 
     upperThreshold.value = self_upperThreshold;
