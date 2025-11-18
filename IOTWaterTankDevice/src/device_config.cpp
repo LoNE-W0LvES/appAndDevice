@@ -222,31 +222,65 @@ bool DeviceConfigManager::parseConfig(const String& json, DeviceConfig& config) 
     if (isNested) {
         // Nested format: {upperThreshold: {value: 95, lastModified: 123}}
         config.upperThreshold = deviceConfig["upperThreshold"]["value"] | DEFAULT_UPPER_THRESHOLD;
-        config.lowerThreshold = deviceConfig["lowerThreshold"]["value"] | DEFAULT_LOWER_THRESHOLD;
-        config.tankHeight = deviceConfig["tankHeight"]["value"] | DEFAULT_TANK_HEIGHT;
-        config.tankWidth = deviceConfig["tankWidth"]["value"] | DEFAULT_TANK_WIDTH;
-        config.tankShape = deviceConfig["tankShape"]["value"] | "CYLINDRICAL";
-        config.usedTotal = deviceConfig["UsedTotal"]["value"] | 0.0f;
-        config.maxInflow = deviceConfig["maxInflow"]["value"] | 0.0f;
-        config.force_update = deviceConfig["force_update"]["value"] | false;
-        config.sensorFilter = deviceConfig["sensorFilter"]["value"] | DEFAULT_SENSOR_FILTER;
-        config.ipAddress = deviceConfig["ip_address"]["value"] | "";
+        config.upperThresholdLastModified = deviceConfig["upperThreshold"]["lastModified"] | (uint64_t)0;
 
-        // Use uint64_t for timestamp to avoid 32-bit overflow
-        config.lastModified = deviceConfig["upperThreshold"]["lastModified"] | (uint64_t)0;
+        config.lowerThreshold = deviceConfig["lowerThreshold"]["value"] | DEFAULT_LOWER_THRESHOLD;
+        config.lowerThresholdLastModified = deviceConfig["lowerThreshold"]["lastModified"] | (uint64_t)0;
+
+        config.tankHeight = deviceConfig["tankHeight"]["value"] | DEFAULT_TANK_HEIGHT;
+        config.tankHeightLastModified = deviceConfig["tankHeight"]["lastModified"] | (uint64_t)0;
+
+        config.tankWidth = deviceConfig["tankWidth"]["value"] | DEFAULT_TANK_WIDTH;
+        config.tankWidthLastModified = deviceConfig["tankWidth"]["lastModified"] | (uint64_t)0;
+
+        config.tankShape = deviceConfig["tankShape"]["value"] | "CYLINDRICAL";
+        config.tankShapeLastModified = deviceConfig["tankShape"]["lastModified"] | (uint64_t)0;
+
+        config.usedTotal = deviceConfig["UsedTotal"]["value"] | 0.0f;
+        config.usedTotalLastModified = deviceConfig["UsedTotal"]["lastModified"] | (uint64_t)0;
+
+        config.maxInflow = deviceConfig["maxInflow"]["value"] | 0.0f;
+        config.maxInflowLastModified = deviceConfig["maxInflow"]["lastModified"] | (uint64_t)0;
+
+        config.force_update = deviceConfig["force_update"]["value"] | false;
+        config.forceUpdateLastModified = deviceConfig["force_update"]["lastModified"] | (uint64_t)0;
+
+        config.sensorFilter = deviceConfig["sensorFilter"]["value"] | DEFAULT_SENSOR_FILTER;
+        config.sensorFilterLastModified = deviceConfig["sensorFilter"]["lastModified"] | (uint64_t)0;
+
+        config.ipAddress = deviceConfig["ip_address"]["value"] | "";
+        config.ipAddressLastModified = deviceConfig["ip_address"]["lastModified"] | (uint64_t)0;
     } else {
         // Direct format: {upperThreshold: 95, lowerThreshold: 20, ...}
         config.upperThreshold = deviceConfig["upperThreshold"] | DEFAULT_UPPER_THRESHOLD;
+        config.upperThresholdLastModified = 0;
+
         config.lowerThreshold = deviceConfig["lowerThreshold"] | DEFAULT_LOWER_THRESHOLD;
+        config.lowerThresholdLastModified = 0;
+
         config.tankHeight = deviceConfig["tankHeight"] | DEFAULT_TANK_HEIGHT;
+        config.tankHeightLastModified = 0;
+
         config.tankWidth = deviceConfig["tankWidth"] | DEFAULT_TANK_WIDTH;
+        config.tankWidthLastModified = 0;
+
         config.tankShape = deviceConfig["tankShape"] | "CYLINDRICAL";
+        config.tankShapeLastModified = 0;
+
         config.usedTotal = deviceConfig["UsedTotal"] | 0.0f;
+        config.usedTotalLastModified = 0;
+
         config.maxInflow = deviceConfig["maxInflow"] | 0.0f;
+        config.maxInflowLastModified = 0;
+
         config.force_update = deviceConfig["force_update"] | false;
+        config.forceUpdateLastModified = 0;
+
         config.sensorFilter = deviceConfig["sensorFilter"] | DEFAULT_SENSOR_FILTER;
+        config.sensorFilterLastModified = 0;
+
         config.ipAddress = deviceConfig["ip_address"] | "";
-        config.lastModified = 0;  // Not available in direct format
+        config.ipAddressLastModified = 0;
     }
 
     return true;
@@ -257,56 +291,56 @@ String DeviceConfigManager::buildConfigPayload(const DeviceConfig& config, bool 
 
     doc["deviceId"] = DEVICE_ID;
 
-    // Create nested objects for each field
+    // Create nested objects for each field with per-field timestamps
     JsonObject upperThreshold = doc.createNestedObject("upperThreshold");
     upperThreshold["key"] = "upperThreshold";
     upperThreshold["value"] = config.upperThreshold;
-    upperThreshold["timestamp"] = priority ? 0 : (unsigned long)config.lastModified;
+    upperThreshold["timestamp"] = priority ? 0 : (unsigned long)config.upperThresholdLastModified;
 
     JsonObject lowerThreshold = doc.createNestedObject("lowerThreshold");
     lowerThreshold["key"] = "lowerThreshold";
     lowerThreshold["value"] = config.lowerThreshold;
-    lowerThreshold["timestamp"] = priority ? 0 : (unsigned long)config.lastModified;
+    lowerThreshold["timestamp"] = priority ? 0 : (unsigned long)config.lowerThresholdLastModified;
 
     JsonObject tankHeight = doc.createNestedObject("tankHeight");
     tankHeight["key"] = "tankHeight";
     tankHeight["value"] = config.tankHeight;
-    tankHeight["timestamp"] = priority ? 0 : (unsigned long)config.lastModified;
+    tankHeight["timestamp"] = priority ? 0 : (unsigned long)config.tankHeightLastModified;
 
     JsonObject tankWidth = doc.createNestedObject("tankWidth");
     tankWidth["key"] = "tankWidth";
     tankWidth["value"] = config.tankWidth;
-    tankWidth["timestamp"] = priority ? 0 : (unsigned long)config.lastModified;
+    tankWidth["timestamp"] = priority ? 0 : (unsigned long)config.tankWidthLastModified;
 
     JsonObject tankShape = doc.createNestedObject("tankShape");
     tankShape["key"] = "tankShape";
     tankShape["value"] = config.tankShape;
-    tankShape["timestamp"] = priority ? 0 : (unsigned long)config.lastModified;
+    tankShape["timestamp"] = priority ? 0 : (unsigned long)config.tankShapeLastModified;
 
     JsonObject usedTotal = doc.createNestedObject("UsedTotal");
     usedTotal["key"] = "UsedTotal";
     usedTotal["value"] = config.usedTotal;
-    usedTotal["timestamp"] = priority ? 0 : (unsigned long)config.lastModified;
+    usedTotal["timestamp"] = priority ? 0 : (unsigned long)config.usedTotalLastModified;
 
     JsonObject maxInflow = doc.createNestedObject("maxInflow");
     maxInflow["key"] = "maxInflow";
     maxInflow["value"] = config.maxInflow;
-    maxInflow["timestamp"] = priority ? 0 : (unsigned long)config.lastModified;
+    maxInflow["timestamp"] = priority ? 0 : (unsigned long)config.maxInflowLastModified;
 
     JsonObject forceUpdate = doc.createNestedObject("force_update");
     forceUpdate["key"] = "force_update";
     forceUpdate["value"] = config.force_update;
-    forceUpdate["timestamp"] = priority ? 0 : (unsigned long)config.lastModified;
+    forceUpdate["timestamp"] = priority ? 0 : (unsigned long)config.forceUpdateLastModified;
 
     JsonObject sensorFilter = doc.createNestedObject("sensorFilter");
     sensorFilter["key"] = "sensorFilter";
     sensorFilter["value"] = config.sensorFilter;
-    sensorFilter["timestamp"] = priority ? 0 : (unsigned long)config.lastModified;
+    sensorFilter["timestamp"] = priority ? 0 : (unsigned long)config.sensorFilterLastModified;
 
     JsonObject ipAddress = doc.createNestedObject("ip_address");
     ipAddress["key"] = "ip_address";
     ipAddress["value"] = config.ipAddress;
-    ipAddress["timestamp"] = priority ? 0 : (unsigned long)config.lastModified;
+    ipAddress["timestamp"] = priority ? 0 : (unsigned long)config.ipAddressLastModified;
 
     String payload;
     serializeJson(doc, payload);

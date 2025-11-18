@@ -524,22 +524,18 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
 }
 
 void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
-    // GET /{device_id}/config - Return device configuration with timestamps
+    // GET /{device_id}/config - Return device configuration with per-field timestamps
     // Format matches server structure: {field: {key, label, type, value, lastModified}}
     Serial.println("[WebServer] GET /" + deviceId + "/config");
 
     StaticJsonDocument<2048> doc;
-
-    // All fields use the same lastModified timestamp
-    // Use uint64_t to avoid truncation of large timestamps
-    uint64_t lastModified = deviceConfig.lastModified;
 
     // Upper Threshold
     JsonObject upperThreshold = doc.createNestedObject("upperThreshold");
     upperThreshold["key"] = "upperThreshold";
     upperThreshold["label"] = "Upper Threshold";
     upperThreshold["type"] = "number";
-    upperThreshold["lastModified"] = lastModified;
+    upperThreshold["lastModified"] = deviceConfig.upperThresholdLastModified;
     upperThreshold["value"] = deviceConfig.upperThreshold;
 
     // Lower Threshold
@@ -547,7 +543,7 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     lowerThreshold["key"] = "lowerThreshold";
     lowerThreshold["label"] = "Lower Threshold";
     lowerThreshold["type"] = "number";
-    lowerThreshold["lastModified"] = lastModified;
+    lowerThreshold["lastModified"] = deviceConfig.lowerThresholdLastModified;
     lowerThreshold["value"] = deviceConfig.lowerThreshold;
 
     // Tank Height
@@ -555,7 +551,7 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     tankHeight["key"] = "tankHeight";
     tankHeight["label"] = "Tank Height";
     tankHeight["type"] = "number";
-    tankHeight["lastModified"] = lastModified;
+    tankHeight["lastModified"] = deviceConfig.tankHeightLastModified;
     tankHeight["value"] = deviceConfig.tankHeight;
 
     // Tank Width
@@ -563,7 +559,7 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     tankWidth["key"] = "tankWidth";
     tankWidth["label"] = "Tank Width";
     tankWidth["type"] = "number";
-    tankWidth["lastModified"] = lastModified;
+    tankWidth["lastModified"] = deviceConfig.tankWidthLastModified;
     tankWidth["value"] = deviceConfig.tankWidth;
 
     // Tank Shape
@@ -574,7 +570,7 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     JsonArray tankShapeOptions = tankShape.createNestedArray("options");
     tankShapeOptions.add("Cylindrical");
     tankShapeOptions.add("Rectangular");
-    tankShape["lastModified"] = lastModified;
+    tankShape["lastModified"] = deviceConfig.tankShapeLastModified;
     tankShape["value"] = deviceConfig.tankShape;
 
     // Used Total
@@ -582,7 +578,7 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     usedTotal["key"] = "UsedTotal";
     usedTotal["label"] = "Total Water Used";
     usedTotal["type"] = "number";
-    usedTotal["lastModified"] = lastModified;
+    usedTotal["lastModified"] = deviceConfig.usedTotalLastModified;
     usedTotal["value"] = deviceConfig.usedTotal;
 
     // Max Inflow
@@ -590,7 +586,7 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     maxInflow["key"] = "maxInflow";
     maxInflow["label"] = "Max Inflow";
     maxInflow["type"] = "number";
-    maxInflow["lastModified"] = lastModified;
+    maxInflow["lastModified"] = deviceConfig.maxInflowLastModified;
     maxInflow["value"] = deviceConfig.maxInflow;
 
     // Force Update
@@ -602,7 +598,7 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     force_update["description"] = "When enabled, device will force download and install firmware update";
     force_update["system"] = true;
     force_update["hidden"] = false;
-    force_update["lastModified"] = lastModified;
+    force_update["lastModified"] = deviceConfig.forceUpdateLastModified;
 
     // Sensor Filter
     JsonObject sensorFilter = doc.createNestedObject("sensorFilter");
@@ -611,7 +607,7 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     sensorFilter["type"] = "boolean";
     sensorFilter["value"] = deviceConfig.sensorFilter;
     sensorFilter["description"] = "Enable/disable sensor filtering and smoothing for more stable readings";
-    sensorFilter["lastModified"] = lastModified;
+    sensorFilter["lastModified"] = deviceConfig.sensorFilterLastModified;
 
     // IP Address
     JsonObject ipAddress = doc.createNestedObject("ip_address");
@@ -621,7 +617,7 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     ipAddress["value"] = deviceConfig.ipAddress;
     ipAddress["description"] = "Local IP address of the device for offline app communication via webserver";
     ipAddress["system"] = true;
-    ipAddress["lastModified"] = lastModified;
+    ipAddress["lastModified"] = deviceConfig.ipAddressLastModified;
 
     String response;
     serializeJson(doc, response);
@@ -669,43 +665,60 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
         return;
     }
 
-    // Extract incoming config values and timestamp
-    DeviceConfig incomingConfig;
+    // Extract incoming config values with per-field timestamps
+    DeviceConfig incomingConfig = deviceConfig;  // Start with current config
     bool hasPriorityFlag = false;
 
-    // Parse nested JSON structure
+    // Parse nested JSON structure with per-field timestamps
     if (doc.containsKey("upperThreshold")) {
         incomingConfig.upperThreshold = doc["upperThreshold"]["value"] | deviceConfig.upperThreshold;
-        uint64_t ts = doc["upperThreshold"]["lastModified"] | (uint64_t)0;
-        if (ts == 0) hasPriorityFlag = true;
-        incomingConfig.lastModified = ts;  // Use timestamp from first field
+        incomingConfig.upperThresholdLastModified = doc["upperThreshold"]["lastModified"] | (uint64_t)0;
+        if (incomingConfig.upperThresholdLastModified == 0) hasPriorityFlag = true;
     }
     if (doc.containsKey("lowerThreshold")) {
         incomingConfig.lowerThreshold = doc["lowerThreshold"]["value"] | deviceConfig.lowerThreshold;
+        incomingConfig.lowerThresholdLastModified = doc["lowerThreshold"]["lastModified"] | (uint64_t)0;
+        if (incomingConfig.lowerThresholdLastModified == 0) hasPriorityFlag = true;
     }
     if (doc.containsKey("tankHeight")) {
         incomingConfig.tankHeight = doc["tankHeight"]["value"] | deviceConfig.tankHeight;
+        incomingConfig.tankHeightLastModified = doc["tankHeight"]["lastModified"] | (uint64_t)0;
+        if (incomingConfig.tankHeightLastModified == 0) hasPriorityFlag = true;
     }
     if (doc.containsKey("tankWidth")) {
         incomingConfig.tankWidth = doc["tankWidth"]["value"] | deviceConfig.tankWidth;
+        incomingConfig.tankWidthLastModified = doc["tankWidth"]["lastModified"] | (uint64_t)0;
+        if (incomingConfig.tankWidthLastModified == 0) hasPriorityFlag = true;
     }
     if (doc.containsKey("tankShape")) {
         incomingConfig.tankShape = doc["tankShape"]["value"] | deviceConfig.tankShape;
+        incomingConfig.tankShapeLastModified = doc["tankShape"]["lastModified"] | (uint64_t)0;
+        if (incomingConfig.tankShapeLastModified == 0) hasPriorityFlag = true;
     }
     if (doc.containsKey("UsedTotal")) {
         incomingConfig.usedTotal = doc["UsedTotal"]["value"] | deviceConfig.usedTotal;
+        incomingConfig.usedTotalLastModified = doc["UsedTotal"]["lastModified"] | (uint64_t)0;
+        if (incomingConfig.usedTotalLastModified == 0) hasPriorityFlag = true;
     }
     if (doc.containsKey("maxInflow")) {
         incomingConfig.maxInflow = doc["maxInflow"]["value"] | deviceConfig.maxInflow;
+        incomingConfig.maxInflowLastModified = doc["maxInflow"]["lastModified"] | (uint64_t)0;
+        if (incomingConfig.maxInflowLastModified == 0) hasPriorityFlag = true;
     }
     if (doc.containsKey("force_update")) {
         incomingConfig.force_update = doc["force_update"]["value"] | deviceConfig.force_update;
+        incomingConfig.forceUpdateLastModified = doc["force_update"]["lastModified"] | (uint64_t)0;
+        if (incomingConfig.forceUpdateLastModified == 0) hasPriorityFlag = true;
     }
     if (doc.containsKey("sensorFilter")) {
         incomingConfig.sensorFilter = doc["sensorFilter"]["value"] | deviceConfig.sensorFilter;
+        incomingConfig.sensorFilterLastModified = doc["sensorFilter"]["lastModified"] | (uint64_t)0;
+        if (incomingConfig.sensorFilterLastModified == 0) hasPriorityFlag = true;
     }
     if (doc.containsKey("ip_address")) {
         incomingConfig.ipAddress = doc["ip_address"]["value"] | deviceConfig.ipAddress;
+        incomingConfig.ipAddressLastModified = doc["ip_address"]["lastModified"] | (uint64_t)0;
+        if (incomingConfig.ipAddressLastModified == 0) hasPriorityFlag = true;
     }
 
     // ✅ SERVER RULE 2: Value unchanged → Skip update
@@ -728,7 +741,6 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
         StaticJsonDocument<512> responseDoc;
         responseDoc["success"] = true;
         responseDoc["message"] = "No changes - values identical";
-        responseDoc["timestamp"] = deviceConfig.lastModified;
 
         String response;
         serializeJson(responseDoc, response);
@@ -742,12 +754,25 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
         Serial.println("[WebServer] Priority flag detected - accepting app config");
         deviceConfig = incomingConfig;
 
-        // Assign new timestamp
+        // Assign new timestamp to ALL fields
+        uint64_t currentTimestamp;
         if (apiClient != nullptr) {
-            deviceConfig.lastModified = apiClient->getCurrentTimestamp();
+            currentTimestamp = apiClient->getCurrentTimestamp();
         } else {
-            deviceConfig.lastModified = millis();  // Fallback to millis
+            currentTimestamp = millis();  // Fallback to millis
         }
+
+        // Update all field timestamps
+        deviceConfig.upperThresholdLastModified = currentTimestamp;
+        deviceConfig.lowerThresholdLastModified = currentTimestamp;
+        deviceConfig.tankHeightLastModified = currentTimestamp;
+        deviceConfig.tankWidthLastModified = currentTimestamp;
+        deviceConfig.tankShapeLastModified = currentTimestamp;
+        deviceConfig.usedTotalLastModified = currentTimestamp;
+        deviceConfig.maxInflowLastModified = currentTimestamp;
+        deviceConfig.forceUpdateLastModified = currentTimestamp;
+        deviceConfig.sensorFilterLastModified = currentTimestamp;
+        deviceConfig.ipAddressLastModified = currentTimestamp;
 
         // Mark as locally modified (sets device_config_sync_status = false)
         if (apiClient != nullptr) {
@@ -768,7 +793,6 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
         // The heartbeat will handle syncing to server asynchronously
         StaticJsonDocument<512> responseDoc;
         responseDoc["success"] = true;
-        responseDoc["timestamp"] = deviceConfig.lastModified;
         responseDoc["message"] = "Config updated (will sync to server on next heartbeat)";
 
         String response;

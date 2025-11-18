@@ -10,39 +10,64 @@
 // DEVICE CONFIGURATION STRUCTURE
 // ============================================================================
 
-// Device configuration structure with single timestamp for sync
+// Device configuration structure with per-field timestamps
+// Each field has its own lastModified timestamp for fine-grained sync control
 struct DeviceConfig {
-    // Configuration values
+    // Configuration values with individual timestamps
     float upperThreshold;
-    float lowerThreshold;
-    float tankHeight;
-    float tankWidth;
-    String tankShape;
-    float usedTotal;
-    float maxInflow;
-    bool force_update;      // Matches server's "force_update" key
-    bool sensorFilter;      // Enable/disable sensor filtering/smoothing
-    String ipAddress;
+    uint64_t upperThresholdLastModified;
 
-    // Single timestamp for entire config (Unix epoch milliseconds)
-    // Use uint64_t because timestamps can exceed 32-bit unsigned long limit
-    uint64_t lastModified;
+    float lowerThreshold;
+    uint64_t lowerThresholdLastModified;
+
+    float tankHeight;
+    uint64_t tankHeightLastModified;
+
+    float tankWidth;
+    uint64_t tankWidthLastModified;
+
+    String tankShape;
+    uint64_t tankShapeLastModified;
+
+    float usedTotal;
+    uint64_t usedTotalLastModified;
+
+    float maxInflow;
+    uint64_t maxInflowLastModified;
+
+    bool force_update;
+    uint64_t forceUpdateLastModified;
+
+    bool sensorFilter;
+    uint64_t sensorFilterLastModified;
+
+    String ipAddress;
+    uint64_t ipAddressLastModified;
 
     // Constructor to initialize all fields to default values
     DeviceConfig()
         : upperThreshold(0.0f),
+          upperThresholdLastModified(0),
           lowerThreshold(0.0f),
+          lowerThresholdLastModified(0),
           tankHeight(0.0f),
+          tankHeightLastModified(0),
           tankWidth(0.0f),
+          tankWidthLastModified(0),
           tankShape(""),
+          tankShapeLastModified(0),
           usedTotal(0.0f),
+          usedTotalLastModified(0),
           maxInflow(0.0f),
+          maxInflowLastModified(0),
           force_update(false),
+          forceUpdateLastModified(0),
           sensorFilter(DEFAULT_SENSOR_FILTER),
+          sensorFilterLastModified(0),
           ipAddress(""),
-          lastModified(0) {}
+          ipAddressLastModified(0) {}
 
-    // Check if config values have changed (excluding timestamp)
+    // Check if config values have changed (excluding timestamps)
     // Returns true if any value is different
     bool valuesChanged(const DeviceConfig& other) const {
         if (upperThreshold != other.upperThreshold) return true;
