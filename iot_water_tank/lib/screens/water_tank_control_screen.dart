@@ -312,52 +312,70 @@ class _WaterTankControlScreenState extends State<WaterTankControlScreen>
     );
   }
 
-  /// Modern header with logo, title, device ID, LIVE badge, theme toggle, and settings
+  /// Modern header with mode indicator, online badge, theme toggle, and settings
   Widget _buildModernHeader(BuildContext context, Device device, bool isOnline, bool isDarkMode) {
     final colorScheme = Theme.of(context).colorScheme;
 
+    // Determine if using webserver (local) or API (cloud) mode
+    final isWebserverMode = device.localIp != null && device.localIp!.isNotEmpty;
+
     return Row(
       children: [
-        // Menu button to open drawer
-        Builder(
-          builder: (context) => IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () => Scaffold.of(context).openDrawer(),
-            tooltip: 'Device Management',
+        // Menu button to open drawer (moved left with reduced padding)
+        Padding(
+          padding: const EdgeInsets.only(left: 0),
+          child: Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu, size: 24),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+              tooltip: 'Device Management',
+              padding: const EdgeInsets.all(8),
+            ),
           ),
         ),
 
-        // Title and Device ID
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        const SizedBox(width: 4),
+
+        // Mode indicator flag
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: isWebserverMode
+                ? Colors.blue.withOpacity(0.15)
+                : Colors.purple.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isWebserverMode
+                  ? Colors.blue.withOpacity(0.5)
+                  : Colors.purple.withOpacity(0.5),
+              width: 1.5,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'AquaFlow',
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: -0.5,
-                    ),
+              Icon(
+                isWebserverMode ? Icons.router : Icons.cloud,
+                size: 14,
+                color: isWebserverMode ? Colors.blue : Colors.purple,
               ),
+              const SizedBox(width: 4),
               Text(
-                device.name ?? device.id,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onSurface.withOpacity(0.7),
-                    ),
-              ),
-              if (device.lastSeen != null)
-                Text(
-                  'Last seen: ${device.lastSeenText}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurface.withOpacity(0.5),
-                        fontSize: 11,
-                      ),
+                isWebserverMode ? 'LOCAL' : 'API',
+                style: TextStyle(
+                  color: isWebserverMode ? Colors.blue : Colors.purple,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 10,
+                  letterSpacing: 0.5,
                 ),
+              ),
             ],
           ),
         ),
 
-        // Online/Offline Status Badge (Non-clickable)
+        const Spacer(),
+
+        // Online/Offline Status Badge
         AnimatedBuilder(
           animation: _pulseAnimation,
           builder: (context, child) {
