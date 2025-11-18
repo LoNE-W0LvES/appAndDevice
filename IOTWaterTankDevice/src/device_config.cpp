@@ -196,9 +196,9 @@ void DeviceConfigManager::addAuthHeader(HTTPClient& http) {
 }
 
 bool DeviceConfigManager::parseConfig(const String& json, DeviceConfig& config) {
-    // Debug: Print raw response
-    DEBUG_PRINTLN("[DeviceConfig] Config response (raw):");
-    DEBUG_PRINTLN(json);
+    // Debug: Print raw response (only if DEBUG_RESPONSE enabled)
+    DEBUG_RESPONSE_PRINTLN("[DeviceConfig] Config response (raw):");
+    DEBUG_RESPONSE_PRINTLN(json);
 
     StaticJsonDocument<2048> doc;
     DeserializationError error = deserializeJson(doc, json);
@@ -208,9 +208,9 @@ bool DeviceConfigManager::parseConfig(const String& json, DeviceConfig& config) 
         return false;
     }
 
-    // Debug: Print parsed JSON structure
-    DEBUG_PRINTLN("[DeviceConfig] Config response (parsed):");
-    #ifdef DEBUG_ENABLED
+    // Debug: Print parsed JSON structure (only if DEBUG_RESPONSE enabled)
+    DEBUG_RESPONSE_PRINTLN("[DeviceConfig] Config response (parsed):");
+    #ifdef DEBUG_RESPONSE
     serializeJsonPretty(doc, Serial);
     Serial.println();
     #endif

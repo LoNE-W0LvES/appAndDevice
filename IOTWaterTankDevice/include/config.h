@@ -11,6 +11,10 @@
 // Comment out to disable debug output
 #define DEBUG_ENABLED
 
+// Comment out to disable verbose HTTP response logging
+// When disabled, still shows request info and status, but hides response bodies
+// #define DEBUG_RESPONSE
+
 #ifdef DEBUG_ENABLED
   #define DEBUG_PRINT(x) Serial.print(x)
   #define DEBUG_PRINTLN(x) Serial.println(x)
@@ -19,6 +23,16 @@
   #define DEBUG_PRINT(x)
   #define DEBUG_PRINTLN(x)
   #define DEBUG_PRINTF(format, ...)
+#endif
+
+#ifdef DEBUG_RESPONSE
+  #define DEBUG_RESPONSE_PRINT(x) Serial.print(x)
+  #define DEBUG_RESPONSE_PRINTLN(x) Serial.println(x)
+  #define DEBUG_RESPONSE_PRINTF(format, ...) Serial.printf(format, ##__VA_ARGS__)
+#else
+  #define DEBUG_RESPONSE_PRINT(x)
+  #define DEBUG_RESPONSE_PRINTLN(x)
+  #define DEBUG_RESPONSE_PRINTF(format, ...)
 #endif
 
 // ============================================================================

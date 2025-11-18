@@ -563,9 +563,9 @@ bool APIClient::syncTimeWithServer() {
         return false;
     }
 
-    // Debug: Print raw response
-    DEBUG_PRINTLN("[API] Time sync response:");
-    DEBUG_PRINTLN(response);
+    // Debug: Print raw response (only if DEBUG_RESPONSE enabled)
+    DEBUG_RESPONSE_PRINTLN("[API] Time sync response:");
+    DEBUG_RESPONSE_PRINTLN(response);
 
     // Parse server time from JSON response
     StaticJsonDocument<2048> doc;
@@ -577,9 +577,9 @@ bool APIClient::syncTimeWithServer() {
         return false;
     }
 
-    // Debug: Print parsed JSON
-    DEBUG_PRINTLN("[API] Parsed time sync JSON:");
-    #ifdef DEBUG_ENABLED
+    // Debug: Print parsed JSON (only if DEBUG_RESPONSE enabled)
+    DEBUG_RESPONSE_PRINTLN("[API] Parsed time sync JSON:");
+    #ifdef DEBUG_RESPONSE
     serializeJsonPretty(doc, Serial);
     Serial.println();
     #endif

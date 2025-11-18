@@ -127,8 +127,8 @@ void ControlDataManager::addAuthHeader(HTTPClient& http) {
 }
 
 bool ControlDataManager::parseControl(const String& json, ControlData& control) {
-    DEBUG_PRINTLN("[ControlData] Control response (raw):");
-    DEBUG_PRINTLN(json);
+    DEBUG_RESPONSE_PRINTLN("[ControlData] Control response (raw):");
+    DEBUG_RESPONSE_PRINTLN(json);
 
     StaticJsonDocument<2048> doc;
     DeserializationError error = deserializeJson(doc, json);
@@ -138,9 +138,9 @@ bool ControlDataManager::parseControl(const String& json, ControlData& control) 
         return false;
     }
 
-    // Debug: Print parsed JSON structure
-    DEBUG_PRINTLN("[ControlData] Control response (parsed):");
-    #ifdef DEBUG_ENABLED
+    // Debug: Print parsed JSON structure (only if DEBUG_RESPONSE enabled)
+    DEBUG_RESPONSE_PRINTLN("[ControlData] Control response (parsed):");
+    #ifdef DEBUG_RESPONSE
     serializeJsonPretty(doc, Serial);
     Serial.println();
     #endif
