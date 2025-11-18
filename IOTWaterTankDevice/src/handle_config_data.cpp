@@ -171,6 +171,60 @@ void ConfigDataHandler::setAllPriority() {
     DEBUG_PRINTLN("[ConfigHandler] Set all config fields with priority flag");
 }
 
+bool ConfigDataHandler::valuesDifferFromAPI() const {
+    // Check if any merged value differs from its corresponding API value (server value)
+    // Use small epsilon for float comparisons
+    const float EPSILON = 0.001f;
+
+    if (abs(upperThreshold.value - upperThreshold.api_value) > EPSILON) {
+        DEBUG_PRINTF("[ConfigHandler] upperThreshold differs: value=%.2f, api_value=%.2f\n",
+                     upperThreshold.value, upperThreshold.api_value);
+        return true;
+    }
+    if (abs(lowerThreshold.value - lowerThreshold.api_value) > EPSILON) {
+        DEBUG_PRINTF("[ConfigHandler] lowerThreshold differs: value=%.2f, api_value=%.2f\n",
+                     lowerThreshold.value, lowerThreshold.api_value);
+        return true;
+    }
+    if (abs(tankHeight.value - tankHeight.api_value) > EPSILON) {
+        DEBUG_PRINTF("[ConfigHandler] tankHeight differs: value=%.2f, api_value=%.2f\n",
+                     tankHeight.value, tankHeight.api_value);
+        return true;
+    }
+    if (abs(tankWidth.value - tankWidth.api_value) > EPSILON) {
+        DEBUG_PRINTF("[ConfigHandler] tankWidth differs: value=%.2f, api_value=%.2f\n",
+                     tankWidth.value, tankWidth.api_value);
+        return true;
+    }
+    if (tankShape.value != tankShape.api_value) {
+        DEBUG_PRINTF("[ConfigHandler] tankShape differs: value=%s, api_value=%s\n",
+                     tankShape.value.c_str(), tankShape.api_value.c_str());
+        return true;
+    }
+    if (abs(usedTotal.value - usedTotal.api_value) > EPSILON) {
+        DEBUG_PRINTF("[ConfigHandler] usedTotal differs: value=%.2f, api_value=%.2f\n",
+                     usedTotal.value, usedTotal.api_value);
+        return true;
+    }
+    if (abs(maxInflow.value - maxInflow.api_value) > EPSILON) {
+        DEBUG_PRINTF("[ConfigHandler] maxInflow differs: value=%.2f, api_value=%.2f\n",
+                     maxInflow.value, maxInflow.api_value);
+        return true;
+    }
+    if (forceUpdate.value != forceUpdate.api_value) {
+        DEBUG_PRINTF("[ConfigHandler] forceUpdate differs: value=%d, api_value=%d\n",
+                     forceUpdate.value, forceUpdate.api_value);
+        return true;
+    }
+    if (ipAddress.value != ipAddress.api_value) {
+        DEBUG_PRINTF("[ConfigHandler] ipAddress differs: value=%s, api_value=%s\n",
+                     ipAddress.value.c_str(), ipAddress.api_value.c_str());
+        return true;
+    }
+
+    return false;  // All values match API values
+}
+
 void ConfigDataHandler::printState() {
     Serial.println("[ConfigHandler] Current State:");
     Serial.printf("  upperThreshold: %.2f (API: %.2f, Local: %.2f)\n",

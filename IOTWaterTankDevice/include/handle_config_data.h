@@ -83,6 +83,10 @@ public:
     // Set all values with priority flag for uploading to server
     void setAllPriority();
 
+    // Check if current merged values differ from API values (server values)
+    // Returns true if any field's value differs from its api_value
+    bool valuesDifferFromAPI() const;
+
     // Debug: Print current state
     void printState();
 };

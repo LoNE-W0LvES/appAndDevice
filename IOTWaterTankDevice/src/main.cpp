@@ -470,6 +470,13 @@ void fetchControlData() {
             Serial.println("[Main] Config update requested, re-fetching configuration...");
 
             if (apiClient.fetchAndApplyServerConfig(deviceConfig)) {
+                // Check if merged values differ from server values
+                if (configHandler.valuesDifferFromAPI()) {
+                    Serial.println("[Main] Merged values differ from server - syncing back to server...");
+                    apiClient.markConfigModified();
+                    syncConfigToServer();
+                }
+
                 // Apply new configuration
                 sensorManager.setTankConfig(
                     deviceConfig.tankHeight,
@@ -601,6 +608,20 @@ void fetchConfigFromServer() {
 
     // Fetch latest config from server
     if (apiClient.fetchAndApplyServerConfig(deviceConfig)) {
+        // Check if merged values differ from server values (API values)
+        // This happens when local/device values won the 3-way merge
+        if (configHandler.valuesDifferFromAPI()) {
+            Serial.println("[Main] Merged values differ from server - syncing back to server...");
+
+            // Mark config as modified so it will be uploaded with priority
+            apiClient.markConfigModified();
+
+            // Immediately sync to server to ensure server has the winning values
+            syncConfigToServer();
+        } else {
+            Serial.println("[Main] Merged values match server values - no sync needed");
+        }
+
         // Update last synced config (oldData = newData)
         lastSyncedConfig = deviceConfig;
 
