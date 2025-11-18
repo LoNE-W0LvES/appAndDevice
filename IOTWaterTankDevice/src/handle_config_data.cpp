@@ -12,7 +12,6 @@ void ConfigDataHandler::begin() {
     usedTotal.value = 0.0f;
     maxInflow.value = 0.0f;
     forceUpdate.value = false;
-    sensorFilter.value = DEFAULT_SENSOR_FILTER;
     ipAddress.value = "";
 
     DEBUG_PRINTLN("[ConfigHandler] Initialized with defaults");
@@ -26,7 +25,6 @@ void ConfigDataHandler::updateFromAPI(float api_upperThreshold, uint64_t api_upp
                                        float api_usedTotal, uint64_t api_usedTotal_ts,
                                        float api_maxInflow, uint64_t api_maxInflow_ts,
                                        bool api_forceUpdate, uint64_t api_forceUpdate_ts,
-                                       bool api_sensorFilter, uint64_t api_sensorFilter_ts,
                                        const String& api_ipAddress, uint64_t api_ipAddress_ts) {
     upperThreshold.api_value = api_upperThreshold;
     upperThreshold.api_lastModified = api_upperThreshold_ts;
@@ -52,8 +50,6 @@ void ConfigDataHandler::updateFromAPI(float api_upperThreshold, uint64_t api_upp
     forceUpdate.api_value = api_forceUpdate;
     forceUpdate.api_lastModified = api_forceUpdate_ts;
 
-    sensorFilter.api_value = api_sensorFilter;
-    sensorFilter.api_lastModified = api_sensorFilter_ts;
 
     ipAddress.api_value = api_ipAddress;
     ipAddress.api_lastModified = api_ipAddress_ts;
@@ -69,7 +65,6 @@ void ConfigDataHandler::updateFromLocal(float local_upperThreshold, uint64_t loc
                                          float local_usedTotal, uint64_t local_usedTotal_ts,
                                          float local_maxInflow, uint64_t local_maxInflow_ts,
                                          bool local_forceUpdate, uint64_t local_forceUpdate_ts,
-                                         bool local_sensorFilter, uint64_t local_sensorFilter_ts,
                                          const String& local_ipAddress, uint64_t local_ipAddress_ts) {
     upperThreshold.local_value = local_upperThreshold;
     upperThreshold.local_lastModified = local_upperThreshold_ts;
@@ -95,8 +90,6 @@ void ConfigDataHandler::updateFromLocal(float local_upperThreshold, uint64_t loc
     forceUpdate.local_value = local_forceUpdate;
     forceUpdate.local_lastModified = local_forceUpdate_ts;
 
-    sensorFilter.local_value = local_sensorFilter;
-    sensorFilter.local_lastModified = local_sensorFilter_ts;
 
     ipAddress.local_value = local_ipAddress;
     ipAddress.local_lastModified = local_ipAddress_ts;
@@ -108,7 +101,6 @@ void ConfigDataHandler::updateSelf(float self_upperThreshold, float self_lowerTh
                                     float self_tankHeight, float self_tankWidth,
                                     const String& self_tankShape, float self_usedTotal,
                                     float self_maxInflow, bool self_forceUpdate,
-                                    bool self_sensorFilter, const String& self_ipAddress) {
     uint64_t now = millis();
 
     upperThreshold.value = self_upperThreshold;
@@ -135,8 +127,6 @@ void ConfigDataHandler::updateSelf(float self_upperThreshold, float self_lowerTh
     forceUpdate.value = self_forceUpdate;
     forceUpdate.lastModified = now;
 
-    sensorFilter.value = self_sensorFilter;
-    sensorFilter.lastModified = now;
 
     ipAddress.value = self_ipAddress;
     ipAddress.lastModified = now;
@@ -156,7 +146,6 @@ bool ConfigDataHandler::merge() {
     changed |= SyncMerge::mergeFloat(usedTotal);
     changed |= SyncMerge::mergeFloat(maxInflow);
     changed |= SyncMerge::mergeBool(forceUpdate);
-    changed |= SyncMerge::mergeBool(sensorFilter);
     changed |= SyncMerge::mergeString(ipAddress);
 
     if (changed) {
@@ -176,7 +165,6 @@ void ConfigDataHandler::setAllPriority() {
     usedTotal.lastModified = 0;
     maxInflow.lastModified = 0;
     forceUpdate.lastModified = 0;
-    sensorFilter.lastModified = 0;
     ipAddress.lastModified = 0;
 
     DEBUG_PRINTLN("[ConfigHandler] Set all config fields with priority flag");

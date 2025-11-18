@@ -532,13 +532,6 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     force_update["lastModified"] = (unsigned long)configHandler.getForceUpdateTimestamp();
 
     // Sensor Filter
-    JsonObject sensorFilter = doc.createNestedObject("sensorFilter");
-    sensorFilter["key"] = "sensorFilter";
-    sensorFilter["label"] = "Sensor Filter";
-    sensorFilter["type"] = "boolean";
-    sensorFilter["value"] = configHandler.getSensorFilter();
-    sensorFilter["description"] = "Enable/disable sensor filtering and smoothing for more stable readings";
-    sensorFilter["lastModified"] = (unsigned long)configHandler.getSensorFilterTimestamp();
 
     // IP Address
     JsonObject ipAddress = doc.createNestedObject("ip_address");
@@ -621,8 +614,6 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
     bool localForceUpdate = doc["force_update"]["value"] | configHandler.getForceUpdate();
     uint64_t localForceUpdateTs = doc["force_update"]["lastModified"] | (uint64_t)0;
 
-    bool localSensorFilter = doc["sensorFilter"]["value"] | configHandler.getSensorFilter();
-    uint64_t localSensorFilterTs = doc["sensorFilter"]["lastModified"] | (uint64_t)0;
 
     String localIpAddress = doc["ip_address"]["value"] | configHandler.getIpAddress();
     uint64_t localIpAddressTs = doc["ip_address"]["lastModified"] | (uint64_t)0;
@@ -661,8 +652,6 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
     deviceConfig.maxInflowLastModified = configHandler.getMaxInflowTimestamp();
     deviceConfig.force_update = configHandler.getForceUpdate();
     deviceConfig.forceUpdateLastModified = configHandler.getForceUpdateTimestamp();
-    deviceConfig.sensorFilter = configHandler.getSensorFilter();
-    deviceConfig.sensorFilterLastModified = configHandler.getSensorFilterTimestamp();
     deviceConfig.ipAddress = configHandler.getIpAddress();
     deviceConfig.ipAddressLastModified = configHandler.getIpAddressTimestamp();
 

@@ -61,7 +61,6 @@ bool DeviceConfigManager::fetchAndApplyServerConfig(DeviceConfig& config) {
         config.usedTotalLastModified = serverConfig.usedTotalLastModified;
         config.maxInflowLastModified = serverConfig.maxInflowLastModified;
         config.forceUpdateLastModified = serverConfig.forceUpdateLastModified;
-        config.sensorFilterLastModified = serverConfig.sensorFilterLastModified;
         config.ipAddressLastModified = serverConfig.ipAddressLastModified;
         return false;  // No actual change
     }
@@ -99,7 +98,6 @@ bool DeviceConfigManager::sendConfigWithPriority(DeviceConfig& config) {
         config.usedTotalLastModified = serverTimestamp;
         config.maxInflowLastModified = serverTimestamp;
         config.forceUpdateLastModified = serverTimestamp;
-        config.sensorFilterLastModified = serverTimestamp;
         config.ipAddressLastModified = serverTimestamp;
         Serial.println("[DeviceConfig] Config synced TO server with priority");
         return true;
@@ -122,7 +120,6 @@ bool DeviceConfigManager::configValuesChanged(const DeviceConfig& a, const Devic
     if (a.usedTotal != b.usedTotal) return true;
     if (a.maxInflow != b.maxInflow) return true;
     if (a.force_update != b.force_update) return true;
-    if (a.sensorFilter != b.sensorFilter) return true;
     if (a.ipAddress != b.ipAddress) return true;
 
     // All values identical
@@ -263,8 +260,6 @@ bool DeviceConfigManager::parseConfig(const String& json, DeviceConfig& config) 
         config.force_update = deviceConfig["force_update"]["value"] | false;
         config.forceUpdateLastModified = deviceConfig["force_update"]["lastModified"] | (uint64_t)0;
 
-        config.sensorFilter = deviceConfig["sensorFilter"]["value"] | DEFAULT_SENSOR_FILTER;
-        config.sensorFilterLastModified = deviceConfig["sensorFilter"]["lastModified"] | (uint64_t)0;
 
         config.ipAddress = deviceConfig["ip_address"]["value"] | "";
         config.ipAddressLastModified = deviceConfig["ip_address"]["lastModified"] | (uint64_t)0;
@@ -294,8 +289,6 @@ bool DeviceConfigManager::parseConfig(const String& json, DeviceConfig& config) 
         config.force_update = deviceConfig["force_update"] | false;
         config.forceUpdateLastModified = 0;
 
-        config.sensorFilter = deviceConfig["sensorFilter"] | DEFAULT_SENSOR_FILTER;
-        config.sensorFilterLastModified = 0;
 
         config.ipAddress = deviceConfig["ip_address"] | "";
         config.ipAddressLastModified = 0;
@@ -368,12 +361,6 @@ String DeviceConfigManager::buildConfigPayload(const DeviceConfig& config, bool 
     forceUpdate["value"] = config.force_update;
     forceUpdate["lastModified"] = priority ? 0 : (unsigned long)config.forceUpdateLastModified;
 
-    JsonObject sensorFilter = configUpdates.createNestedObject("sensorFilter");
-    sensorFilter["key"] = "sensorFilter";
-    sensorFilter["label"] = "Sensor Filter";
-    sensorFilter["type"] = "boolean";
-    sensorFilter["value"] = config.sensorFilter;
-    sensorFilter["lastModified"] = priority ? 0 : (unsigned long)config.sensorFilterLastModified;
 
     JsonObject ipAddress = configUpdates.createNestedObject("ip_address");
     ipAddress["key"] = "ip_address";

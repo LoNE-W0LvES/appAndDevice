@@ -21,7 +21,6 @@ public:
     SyncFloat usedTotal;
     SyncFloat maxInflow;
     SyncBool forceUpdate;
-    SyncBool sensorFilter;
     SyncString ipAddress;
 
     // Initialize with default values
@@ -36,7 +35,6 @@ public:
                        float api_usedTotal, uint64_t api_usedTotal_ts,
                        float api_maxInflow, uint64_t api_maxInflow_ts,
                        bool api_forceUpdate, uint64_t api_forceUpdate_ts,
-                       bool api_sensorFilter, uint64_t api_sensorFilter_ts,
                        const String& api_ipAddress, uint64_t api_ipAddress_ts);
 
     // Update from Local source (from app via webserver)
@@ -48,7 +46,6 @@ public:
                          float local_usedTotal, uint64_t local_usedTotal_ts,
                          float local_maxInflow, uint64_t local_maxInflow_ts,
                          bool local_forceUpdate, uint64_t local_forceUpdate_ts,
-                         bool local_sensorFilter, uint64_t local_sensorFilter_ts,
                          const String& local_ipAddress, uint64_t local_ipAddress_ts);
 
     // Update self (device's own stored values)
@@ -56,7 +53,7 @@ public:
                     float self_tankHeight, float self_tankWidth,
                     const String& self_tankShape, float self_usedTotal,
                     float self_maxInflow, bool self_forceUpdate,
-                    bool self_sensorFilter, const String& self_ipAddress);
+                    const String& self_ipAddress);
 
     // Perform 3-way merge - returns true if any value changed
     bool merge();
@@ -70,7 +67,6 @@ public:
     float getUsedTotal() const { return usedTotal.value; }
     float getMaxInflow() const { return maxInflow.value; }
     bool getForceUpdate() const { return forceUpdate.value; }
-    bool getSensorFilter() const { return sensorFilter.value; }
     String getIpAddress() const { return ipAddress.value; }
 
     // Get timestamps (after merge)
@@ -82,7 +78,6 @@ public:
     uint64_t getUsedTotalTimestamp() const { return usedTotal.lastModified; }
     uint64_t getMaxInflowTimestamp() const { return maxInflow.lastModified; }
     uint64_t getForceUpdateTimestamp() const { return forceUpdate.lastModified; }
-    uint64_t getSensorFilterTimestamp() const { return sensorFilter.lastModified; }
     uint64_t getIpAddressTimestamp() const { return ipAddress.lastModified; }
 
     // Set all values with priority flag for uploading to server

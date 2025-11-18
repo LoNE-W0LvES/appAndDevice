@@ -471,7 +471,6 @@ bool APIClient::fetchAndApplyServerConfig(DeviceConfig& config) {
         if (apiConfig.usedTotalLastModified == 0) apiConfig.usedTotalLastModified = currentTime;
         if (apiConfig.maxInflowLastModified == 0) apiConfig.maxInflowLastModified = currentTime;
         if (apiConfig.forceUpdateLastModified == 0) apiConfig.forceUpdateLastModified = currentTime;
-        if (apiConfig.sensorFilterLastModified == 0) apiConfig.sensorFilterLastModified = currentTime;
         if (apiConfig.ipAddressLastModified == 0) apiConfig.ipAddressLastModified = currentTime;
     }
 
@@ -485,7 +484,6 @@ bool APIClient::fetchAndApplyServerConfig(DeviceConfig& config) {
         apiConfig.usedTotal, apiConfig.usedTotalLastModified,
         apiConfig.maxInflow, apiConfig.maxInflowLastModified,
         apiConfig.force_update, apiConfig.forceUpdateLastModified,
-        apiConfig.sensorFilter, apiConfig.sensorFilterLastModified,
         apiConfig.ipAddress, apiConfig.ipAddressLastModified
     );
 
@@ -509,8 +507,6 @@ bool APIClient::fetchAndApplyServerConfig(DeviceConfig& config) {
     config.maxInflowLastModified = configHandler.getMaxInflowTimestamp();
     config.force_update = configHandler.getForceUpdate();
     config.forceUpdateLastModified = configHandler.getForceUpdateTimestamp();
-    config.sensorFilter = configHandler.getSensorFilter();
-    config.sensorFilterLastModified = configHandler.getSensorFilterTimestamp();
     config.ipAddress = configHandler.getIpAddress();
     config.ipAddressLastModified = configHandler.getIpAddressTimestamp();
 
