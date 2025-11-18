@@ -47,6 +47,7 @@ OTAUpdater otaUpdater;
 // ============================================================================
 
 DeviceConfig deviceConfig;
+DeviceConfig lastSyncedConfig;  // Track last synced config (oldData)
 ControlData controlData;
 
 // Timing variables
@@ -300,6 +301,9 @@ bool connectToBackend() {
     displayManager.showMessage("Backend", "Syncing...", 0);
     apiClient.onDeviceOnline(deviceConfig);
 
+    // Initialize last synced config (oldData = newData)
+    lastSyncedConfig = deviceConfig;
+
     configFetched = true;
 
     // Apply configuration to sensor manager
@@ -457,6 +461,7 @@ void checkOTAUpdate() {
 
 /**
  * Sync config to server if locally modified (every 30 seconds)
+ * Only syncs if data has actually changed (oldData != newData)
  */
 void syncConfigToServer() {
     if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
@@ -465,25 +470,35 @@ void syncConfigToServer() {
 
     // Check if device has pending config changes to sync
     if (apiClient.hasPendingConfigSync()) {
-        Serial.println("[Main] Pending config sync detected - syncing to server...");
+        // Check if config values have actually changed (oldData != newData)
+        if (deviceConfig.valuesChanged(lastSyncedConfig)) {
+            Serial.println("[Main] Config values changed - syncing to server...");
+            Serial.println("  Upper Threshold: " + String(lastSyncedConfig.upperThreshold) + " → " + String(deviceConfig.upperThreshold));
+            Serial.println("  Lower Threshold: " + String(lastSyncedConfig.lowerThreshold) + " → " + String(deviceConfig.lowerThreshold));
 
-        // Trigger sync (this will send config to server with priority)
-        apiClient.onDeviceOnline(deviceConfig);
+            // Trigger sync (this will send config to server with priority)
+            apiClient.onDeviceOnline(deviceConfig);
 
-        // Reapply config after sync
-        sensorManager.setTankConfig(
-            deviceConfig.tankHeight,
-            deviceConfig.tankWidth,
-            deviceConfig.tankShape
-        );
-        displayManager.setTankSettings(
-            deviceConfig.tankHeight,
-            deviceConfig.tankWidth,
-            deviceConfig.tankShape,
-            deviceConfig.upperThreshold,
-            deviceConfig.lowerThreshold
-        );
-        webServer.updateDeviceConfig(deviceConfig);
+            // Update last synced config (oldData = newData)
+            lastSyncedConfig = deviceConfig;
+
+            // Reapply config after sync
+            sensorManager.setTankConfig(
+                deviceConfig.tankHeight,
+                deviceConfig.tankWidth,
+                deviceConfig.tankShape
+            );
+            displayManager.setTankSettings(
+                deviceConfig.tankHeight,
+                deviceConfig.tankWidth,
+                deviceConfig.tankShape,
+                deviceConfig.upperThreshold,
+                deviceConfig.lowerThreshold
+            );
+            webServer.updateDeviceConfig(deviceConfig);
+        } else {
+            Serial.println("[Main] Config values unchanged - skipping sync");
+        }
     }
 }
 
@@ -628,6 +643,9 @@ void loop() {
         if (isConnected && !wasConnected) {
             Serial.println("[Main] Device transitioned to ONLINE");
             apiClient.onDeviceOnline(deviceConfig);
+
+            // Update last synced config (oldData = newData)
+            lastSyncedConfig = deviceConfig;
 
             // Reapply config after sync
             sensorManager.setTankConfig(

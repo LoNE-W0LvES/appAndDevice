@@ -39,6 +39,21 @@ struct DeviceConfig {
           force_update(false),
           ipAddress(""),
           lastModified(0) {}
+
+    // Check if config values have changed (excluding timestamp)
+    // Returns true if any value is different
+    bool valuesChanged(const DeviceConfig& other) const {
+        if (upperThreshold != other.upperThreshold) return true;
+        if (lowerThreshold != other.lowerThreshold) return true;
+        if (tankHeight != other.tankHeight) return true;
+        if (tankWidth != other.tankWidth) return true;
+        if (tankShape != other.tankShape) return true;
+        if (usedTotal != other.usedTotal) return true;
+        if (maxInflow != other.maxInflow) return true;
+        if (force_update != other.force_update) return true;
+        if (ipAddress != other.ipAddress) return true;
+        return false;  // All values identical
+    }
 };
 
 // ============================================================================
