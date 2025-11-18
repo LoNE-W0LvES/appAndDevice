@@ -11,11 +11,18 @@ SensorManager::SensorManager()
       lastReadTime(0),
       previousReadTime(0),
       currentInflow(0),
-      bufferIndex(0) {
+      bufferIndex(0),
+      stabilityIndex(0),
+      stabilityCount(0) {
 
     // Initialize distance buffer
     for (int i = 0; i < BUFFER_SIZE; i++) {
         distanceBuffer[i] = 0;
+    }
+
+    // Initialize stability buffer
+    for (int i = 0; i < STABILITY_BUFFER_SIZE; i++) {
+        stabilityBuffer[i] = 0;
     }
 
     // Create JSN-SR04T sensor object with LOG_LEVEL_SILENT for cleaner output
@@ -65,17 +72,48 @@ float SensorManager::readDistance() {
 
     if (distance > 0 && distance < 400) { // Valid range: 2cm to 400cm
 
-        // Spike detection filter
+        // Add to stability buffer for tracking consecutive readings
+        stabilityBuffer[stabilityIndex] = distance;
+        stabilityIndex = (stabilityIndex + 1) % STABILITY_BUFFER_SIZE;
+        stabilityCount = min(stabilityCount + 1, STABILITY_BUFFER_SIZE);
+
+        // Spike detection filter with stability override
         // Water level changes gradually - reject sudden spikes
-        // Threshold configured in config.h: SENSOR_SPIKE_THRESHOLD
+        // UNLESS: readings have been stable for 5 consecutive measurements
         if (currentDistance > 0) {
             float distanceChange = abs(distance - currentDistance);
 
             if (distanceChange > SENSOR_SPIKE_THRESHOLD) {
-                DEBUG_PRINTF("[Sensor] Spike detected! Current: %.2f cm, New: %.2f cm, Change: %.2f cm (threshold: %.2f cm) - REJECTED\n",
-                            currentDistance, distance, distanceChange, SENSOR_SPIKE_THRESHOLD);
-                // Return previous stable reading
-                return currentDistance;
+                // Check if last 5 readings are stable (within 20cm of each other)
+                // If stable, accept the new value even if different from old currentDistance
+                bool isStable = areReadingsStable(STABILITY_BUFFER_SIZE, SENSOR_SPIKE_THRESHOLD);
+
+                if (isStable && stabilityCount >= STABILITY_BUFFER_SIZE) {
+                    DEBUG_PRINTF("[Sensor] Spike detected but readings are stable for %d measurements - ACCEPTED\n", STABILITY_BUFFER_SIZE);
+                    DEBUG_PRINTF("[Sensor]   Old: %.2f cm → New: %.2f cm (change: %.2f cm)\n",
+                                currentDistance, distance, distanceChange);
+
+                    // Reset current distance to the new stable value
+                    currentDistance = distance;
+
+                    // Clear smoothing buffer and start fresh with new value
+                    for (int i = 0; i < BUFFER_SIZE; i++) {
+                        distanceBuffer[i] = distance;
+                    }
+                    bufferIndex = 0;
+
+                    return distance;
+                } else {
+                    DEBUG_PRINTF("[Sensor] Spike detected! Current: %.2f cm, New: %.2f cm, Change: %.2f cm (threshold: %.2f cm) - REJECTED\n",
+                                currentDistance, distance, distanceChange, SENSOR_SPIKE_THRESHOLD);
+                    DEBUG_PRINTF("[Sensor]   Stability: %d/%d readings (need %d stable)\n",
+                                stabilityCount, STABILITY_BUFFER_SIZE, STABILITY_BUFFER_SIZE);
+                    // Return previous stable reading
+                    return currentDistance;
+                }
+            } else {
+                // Normal change within threshold - reset stability tracking
+                stabilityCount = 0;
             }
         }
 
@@ -102,6 +140,28 @@ float SensorManager::getAverageDistance() {
     }
 
     return (count > 0) ? (sum / count) : currentDistance;
+}
+
+bool SensorManager::areReadingsStable(int count, float threshold) {
+    // Check if we have enough readings
+    if (stabilityCount < count) {
+        return false;
+    }
+
+    // Find min and max values in the stability buffer
+    float minValue = stabilityBuffer[0];
+    float maxValue = stabilityBuffer[0];
+
+    for (int i = 1; i < count; i++) {
+        if (stabilityBuffer[i] > 0) {  // Skip uninitialized values
+            if (stabilityBuffer[i] < minValue) minValue = stabilityBuffer[i];
+            if (stabilityBuffer[i] > maxValue) maxValue = stabilityBuffer[i];
+        }
+    }
+
+    // Check if all readings are within threshold of each other
+    float range = maxValue - minValue;
+    return range <= threshold;
 }
 
 void SensorManager::update() {

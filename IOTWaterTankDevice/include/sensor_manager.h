@@ -64,8 +64,17 @@ private:
     float distanceBuffer[BUFFER_SIZE];
     int bufferIndex;
 
+    // Spike detection with consecutive stable reading tracking
+    static const int STABILITY_BUFFER_SIZE = 5;
+    float stabilityBuffer[STABILITY_BUFFER_SIZE];  // Last 5 raw readings
+    int stabilityIndex;
+    int stabilityCount;  // Number of consecutive stable readings
+
     // Calculate average distance from buffer
     float getAverageDistance();
+
+    // Check if last N readings are stable (within threshold of each other)
+    bool areReadingsStable(int count, float threshold);
 
     // Calculate inflow rate based on water level change
     void calculateInflow();
