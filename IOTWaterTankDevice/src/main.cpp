@@ -627,6 +627,13 @@ void fetchConfigFromServer() {
         // Check if values actually changed during merge
         bool valuesChanged = deviceConfig.valuesChanged(previousConfig);
 
+        Serial.printf("[Main] Values changed check: %s\n", valuesChanged ? "YES" : "NO");
+        if (valuesChanged) {
+            Serial.println("[Main] Old vs New values:");
+            Serial.printf("  upperThreshold: %.2f -> %.2f\n", previousConfig.upperThreshold, deviceConfig.upperThreshold);
+            Serial.printf("  lowerThreshold: %.2f -> %.2f\n", previousConfig.lowerThreshold, deviceConfig.lowerThreshold);
+        }
+
         // Check if merged values differ from server values (API values)
         // This happens when local/device values won the 3-way merge
         if (configHandler.valuesDifferFromAPI()) {
