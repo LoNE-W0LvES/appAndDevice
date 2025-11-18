@@ -50,38 +50,24 @@ bool SyncMerge::mergeBool(SyncBool& sync) {
     int winner = findWinner(sync.api_lastModified, sync.local_lastModified, sync.lastModified);
 
     bool oldValue = sync.value;
-    uint64_t oldTimestamp = sync.lastModified;
 
     switch (winner) {
-        case 1:  // API wins
+        case 1:  // API wins - update Self to match API
             sync.value = sync.api_value;
             sync.lastModified = sync.api_lastModified;
-
-            // Update other sources to match
-            sync.local_value = sync.api_value;
-            sync.local_lastModified = sync.api_lastModified;
-
+            // Don't update api_value or local_value - they represent what was last received
             DEBUG_PRINTLN("[Merge] API won for boolean");
             break;
 
-        case 2:  // Local wins
+        case 2:  // Local wins - update Self to match Local
             sync.value = sync.local_value;
             sync.lastModified = sync.local_lastModified;
-
-            // Update other sources to match
-            sync.api_value = sync.local_value;
-            sync.api_lastModified = sync.local_lastModified;
-
+            // Don't update api_value or local_value - they get updated on next fetch
             DEBUG_PRINTLN("[Merge] Local won for boolean");
             break;
 
-        case 3:  // Self wins
-            // Update other sources to match self
-            sync.api_value = sync.value;
-            sync.api_lastModified = sync.lastModified;
-            sync.local_value = sync.value;
-            sync.local_lastModified = sync.lastModified;
-
+        case 3:  // Self wins - no update needed
+            // Don't update api_value or local_value
             DEBUG_PRINTLN("[Merge] Self won for boolean");
             break;
 
@@ -100,35 +86,22 @@ bool SyncMerge::mergeFloat(SyncFloat& sync) {
     float oldValue = sync.value;
 
     switch (winner) {
-        case 1:  // API wins
+        case 1:  // API wins - update Self to match API
             sync.value = sync.api_value;
             sync.lastModified = sync.api_lastModified;
-
-            // Update other sources to match
-            sync.local_value = sync.api_value;
-            sync.local_lastModified = sync.api_lastModified;
-
+            // Don't update api_value or local_value - they represent what was last received
             DEBUG_PRINTLN("[Merge] API won for float");
             break;
 
-        case 2:  // Local wins
+        case 2:  // Local wins - update Self to match Local
             sync.value = sync.local_value;
             sync.lastModified = sync.local_lastModified;
-
-            // Update other sources to match
-            sync.api_value = sync.local_value;
-            sync.api_lastModified = sync.local_lastModified;
-
+            // Don't update api_value or local_value - they get updated on next fetch
             DEBUG_PRINTLN("[Merge] Local won for float");
             break;
 
-        case 3:  // Self wins
-            // Update other sources to match self
-            sync.api_value = sync.value;
-            sync.api_lastModified = sync.lastModified;
-            sync.local_value = sync.value;
-            sync.local_lastModified = sync.lastModified;
-
+        case 3:  // Self wins - no update needed
+            // Don't update api_value or local_value
             DEBUG_PRINTLN("[Merge] Self won for float");
             break;
 
@@ -146,35 +119,22 @@ bool SyncMerge::mergeString(SyncString& sync) {
     String oldValue = sync.value;
 
     switch (winner) {
-        case 1:  // API wins
+        case 1:  // API wins - update Self to match API
             sync.value = sync.api_value;
             sync.lastModified = sync.api_lastModified;
-
-            // Update other sources to match
-            sync.local_value = sync.api_value;
-            sync.local_lastModified = sync.api_lastModified;
-
+            // Don't update api_value or local_value - they represent what was last received
             DEBUG_PRINTLN("[Merge] API won for string");
             break;
 
-        case 2:  // Local wins
+        case 2:  // Local wins - update Self to match Local
             sync.value = sync.local_value;
             sync.lastModified = sync.local_lastModified;
-
-            // Update other sources to match
-            sync.api_value = sync.local_value;
-            sync.api_lastModified = sync.local_lastModified;
-
+            // Don't update api_value or local_value - they get updated on next fetch
             DEBUG_PRINTLN("[Merge] Local won for string");
             break;
 
-        case 3:  // Self wins
-            // Update other sources to match self
-            sync.api_value = sync.value;
-            sync.api_lastModified = sync.lastModified;
-            sync.local_value = sync.value;
-            sync.local_lastModified = sync.lastModified;
-
+        case 3:  // Self wins - no update needed
+            // Don't update api_value or local_value
             DEBUG_PRINTLN("[Merge] Self won for string");
             break;
 

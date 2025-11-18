@@ -23,34 +23,26 @@ class SyncMerge {
       final winner = _findWinner(sync.apiLastModified, sync.lastModified);
 
       if (winner == 1) {
-        // API wins
+        // API wins - update Self to match API
         sync.value = sync.apiValue;
         sync.lastModified = sync.apiLastModified;
-        sync.localValue = sync.apiValue;
-        sync.localLastModified = sync.apiLastModified;
+        // Don't update apiValue/localValue - they represent what was received
       } else {
-        // Self wins - update API and Local to match
-        sync.apiValue = sync.value;
-        sync.apiLastModified = sync.lastModified;
-        sync.localValue = sync.value;
-        sync.localLastModified = sync.lastModified;
+        // Self wins - no update to apiValue/localValue
+        // They get updated on next fetch from API/Local
       }
     } else {
       // Compare self vs Local
       final winner = _findWinner(sync.localLastModified, sync.lastModified);
 
       if (winner == 1) {
-        // Local wins
+        // Local wins - update Self to match Local
         sync.value = sync.localValue;
         sync.lastModified = sync.localLastModified;
-        sync.apiValue = sync.localValue;
-        sync.apiLastModified = sync.localLastModified;
+        // Don't update apiValue/localValue - they represent what was received
       } else {
-        // Self wins - update API and Local to match
-        sync.apiValue = sync.value;
-        sync.apiLastModified = sync.lastModified;
-        sync.localValue = sync.value;
-        sync.localLastModified = sync.lastModified;
+        // Self wins - no update to apiValue/localValue
+        // They get updated on next fetch from API/Local
       }
     }
 
@@ -67,34 +59,26 @@ class SyncMerge {
       final winner = _findWinner(sync.apiLastModified, sync.lastModified);
 
       if (winner == 1) {
-        // API wins
+        // API wins - update Self to match API
         sync.value = sync.apiValue;
         sync.lastModified = sync.apiLastModified;
-        sync.localValue = sync.apiValue;
-        sync.localLastModified = sync.apiLastModified;
+        // Don't update apiValue/localValue - they represent what was received
       } else {
-        // Self wins
-        sync.apiValue = sync.value;
-        sync.apiLastModified = sync.lastModified;
-        sync.localValue = sync.value;
-        sync.localLastModified = sync.lastModified;
+        // Self wins - no update to apiValue/localValue
+        // They get updated on next fetch from API/Local
       }
     } else {
       // Compare self vs Local
       final winner = _findWinner(sync.localLastModified, sync.lastModified);
 
       if (winner == 1) {
-        // Local wins
+        // Local wins - update Self to match Local
         sync.value = sync.localValue;
         sync.lastModified = sync.localLastModified;
-        sync.apiValue = sync.localValue;
-        sync.apiLastModified = sync.localLastModified;
+        // Don't update apiValue/localValue - they represent what was received
       } else {
-        // Self wins
-        sync.apiValue = sync.value;
-        sync.apiLastModified = sync.lastModified;
-        sync.localValue = sync.value;
-        sync.localLastModified = sync.lastModified;
+        // Self wins - no update to apiValue/localValue
+        // They get updated on next fetch from API/Local
       }
     }
 
@@ -111,34 +95,26 @@ class SyncMerge {
       final winner = _findWinner(sync.apiLastModified, sync.lastModified);
 
       if (winner == 1) {
-        // API wins
+        // API wins - update Self to match API
         sync.value = sync.apiValue;
         sync.lastModified = sync.apiLastModified;
-        sync.localValue = sync.apiValue;
-        sync.localLastModified = sync.apiLastModified;
+        // Don't update apiValue/localValue - they represent what was received
       } else {
-        // Self wins
-        sync.apiValue = sync.value;
-        sync.apiLastModified = sync.lastModified;
-        sync.localValue = sync.value;
-        sync.localLastModified = sync.lastModified;
+        // Self wins - no update to apiValue/localValue
+        // They get updated on next fetch from API/Local
       }
     } else {
       // Compare self vs Local
       final winner = _findWinner(sync.localLastModified, sync.lastModified);
 
       if (winner == 1) {
-        // Local wins
+        // Local wins - update Self to match Local
         sync.value = sync.localValue;
         sync.lastModified = sync.localLastModified;
-        sync.apiValue = sync.localValue;
-        sync.apiLastModified = sync.localLastModified;
+        // Don't update apiValue/localValue - they represent what was received
       } else {
-        // Self wins
-        sync.apiValue = sync.value;
-        sync.apiLastModified = sync.lastModified;
-        sync.localValue = sync.value;
-        sync.localLastModified = sync.lastModified;
+        // Self wins - no update to apiValue/localValue
+        // They get updated on next fetch from API/Local
       }
     }
 
