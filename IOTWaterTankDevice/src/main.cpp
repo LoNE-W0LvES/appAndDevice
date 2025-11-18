@@ -718,35 +718,40 @@ void syncConfigToServerTask(void* parameter) {
                 Serial.println("  Upper Threshold: " + String(lastSyncedConfig.upperThreshold) + " → " + String(deviceConfig.upperThreshold));
                 Serial.println("  Lower Threshold: " + String(lastSyncedConfig.lowerThreshold) + " → " + String(deviceConfig.lowerThreshold));
 
-                // Trigger sync (this will send config to server with priority)
-                apiClient.onDeviceOnline(deviceConfig);
+                // Send config to server with priority (non-blocking, just upload)
+                // Don't call onDeviceOnline() - it's BLOCKING with retries and time sync!
+                if (apiClient.sendConfigWithPriority(deviceConfig)) {
+                    Serial.println("[AsyncTask] Config uploaded to server with priority");
 
-                // Update last synced config (oldData = newData)
-                lastSyncedConfig = deviceConfig;
+                    // Update last synced config (oldData = newData)
+                    lastSyncedConfig = deviceConfig;
 
-                // Save config to NVS for persistence across reboots
-                storageManager.saveDeviceConfig(
-                    deviceConfig.upperThreshold,
-                    deviceConfig.lowerThreshold,
-                    deviceConfig.tankHeight,
-                    deviceConfig.tankWidth,
-                    deviceConfig.tankShape
-                );
+                    // Save config to NVS for persistence across reboots
+                    storageManager.saveDeviceConfig(
+                        deviceConfig.upperThreshold,
+                        deviceConfig.lowerThreshold,
+                        deviceConfig.tankHeight,
+                        deviceConfig.tankWidth,
+                        deviceConfig.tankShape
+                    );
 
-                // Reapply config after sync
-                sensorManager.setTankConfig(
-                    deviceConfig.tankHeight,
-                    deviceConfig.tankWidth,
-                    deviceConfig.tankShape
-                );
-                displayManager.setTankSettings(
-                    deviceConfig.tankHeight,
-                    deviceConfig.tankWidth,
-                    deviceConfig.tankShape,
-                    deviceConfig.upperThreshold,
-                    deviceConfig.lowerThreshold
-                );
-                webServer.updateDeviceConfig(deviceConfig);
+                    // Reapply config after sync
+                    sensorManager.setTankConfig(
+                        deviceConfig.tankHeight,
+                        deviceConfig.tankWidth,
+                        deviceConfig.tankShape
+                    );
+                    displayManager.setTankSettings(
+                        deviceConfig.tankHeight,
+                        deviceConfig.tankWidth,
+                        deviceConfig.tankShape,
+                        deviceConfig.upperThreshold,
+                        deviceConfig.lowerThreshold
+                    );
+                    webServer.updateDeviceConfig(deviceConfig);
+                } else {
+                    Serial.println("[AsyncTask] Failed to upload config to server");
+                }
             } else {
                 Serial.println("[AsyncTask] Config values unchanged - skipping sync");
             }
