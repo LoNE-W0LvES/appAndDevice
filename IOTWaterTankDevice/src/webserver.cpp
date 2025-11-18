@@ -438,7 +438,15 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
         controlData.pumpSwitchLastModified = controlHandler.getPumpSwitchTimestamp();
         controlData.config_update = controlHandler.getConfigUpdate();
         controlData.configUpdateLastModified = controlHandler.getConfigUpdateTimestamp();
+
+        Serial.println("[WebServer] Updated controlData with mutex:");
+        Serial.printf("  controlData.pumpSwitch = %d (from handler: %d)\n",
+                     controlData.pumpSwitch, controlHandler.getPumpSwitch());
+        Serial.printf("  controlData.pumpSwitchLastModified = %llu\n", controlData.pumpSwitchLastModified);
+
         xSemaphoreGive(configMutex);
+    } else {
+        Serial.println("[WebServer] ERROR: Failed to take mutex for controlData update!");
     }
 
     Serial.println("[WebServer] Control updated from app (Local):");

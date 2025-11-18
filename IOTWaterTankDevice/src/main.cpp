@@ -846,10 +846,13 @@ void uploadControlData() {
     // This captures exact values at the moment callback is triggered
     String* jsonPayload = new String();
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
+        Serial.printf("[Main] Reading controlData for JSON: pumpSwitch=%d, ts=%llu\n",
+                     controlData.pumpSwitch, controlData.pumpSwitchLastModified);
+
         // Build JSON from current controlData values
         *jsonPayload = apiClient.buildControlPayload(controlData);
         xSemaphoreGive(configMutex);
-        Serial.println("[Main] Built JSON payload for async upload");
+        Serial.println("[Main] Built JSON payload for async upload:");
         Serial.println(*jsonPayload);
     } else {
         Serial.println("[Main] Failed to acquire mutex for JSON construction, aborting upload");
