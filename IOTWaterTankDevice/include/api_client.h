@@ -121,6 +121,9 @@ public:
     // Check if server is online
     bool isServerOnline();
 
+    // Check if device has pending config changes to sync to server
+    bool hasPendingConfigSync();
+
     // ========================================================================
     // STORAGE
     // ========================================================================

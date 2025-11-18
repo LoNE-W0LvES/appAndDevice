@@ -456,6 +456,38 @@ void checkOTAUpdate() {
 }
 
 /**
+ * Sync config to server if locally modified (every 30 seconds)
+ */
+void syncConfigToServer() {
+    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
+        return;  // Skip if not connected
+    }
+
+    // Check if device has pending config changes to sync
+    if (apiClient.hasPendingConfigSync()) {
+        Serial.println("[Main] Pending config sync detected - syncing to server...");
+
+        // Trigger sync (this will send config to server with priority)
+        apiClient.onDeviceOnline(deviceConfig);
+
+        // Reapply config after sync
+        sensorManager.setTankConfig(
+            deviceConfig.tankHeight,
+            deviceConfig.tankWidth,
+            deviceConfig.tankShape
+        );
+        displayManager.setTankSettings(
+            deviceConfig.tankHeight,
+            deviceConfig.tankWidth,
+            deviceConfig.tankShape,
+            deviceConfig.upperThreshold,
+            deviceConfig.lowerThreshold
+        );
+        webServer.updateDeviceConfig(deviceConfig);
+    }
+}
+
+/**
  * Update OLED display (every 0.5 seconds)
  */
 void updateDisplay() {
@@ -641,6 +673,12 @@ void loop() {
         if (currentTime - lastTelemetryUpload >= TELEMETRY_UPLOAD_INTERVAL) {
             lastTelemetryUpload = currentTime;
             uploadTelemetry();
+        }
+
+        // Sync config to server if locally modified (every 30 seconds)
+        if (currentTime - lastConfigCheck >= TELEMETRY_UPLOAD_INTERVAL) {
+            lastConfigCheck = currentTime;
+            syncConfigToServer();
         }
 
         // Fetch control data (every 5 minutes)

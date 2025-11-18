@@ -619,6 +619,10 @@ bool APIClient::isServerOnline() {
     return connSyncManager.isServerOnline();
 }
 
+bool APIClient::hasPendingConfigSync() {
+    return connSyncManager.needsConfigUpload();
+}
+
 void APIClient::saveSyncStatus() {
     connSyncManager.saveSyncStatus();
 }
