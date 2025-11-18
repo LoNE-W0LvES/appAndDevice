@@ -105,36 +105,36 @@ String TelemetryManager::buildTelemetryPayload(float waterLevel, float currInflo
 
     doc["deviceId"] = DEVICE_ID;
 
-    // Backend expects "sensorData" not "telemetryData"
-    JsonArray telemetryData = doc.createNestedArray("sensorData");
+    // Backend expects telemetry data with named keys (not array)
+    JsonObject telemetryData = doc.createNestedObject("sensorData");
 
     // Water level
-    JsonObject level = telemetryData.createNestedObject();
+    JsonObject level = telemetryData.createNestedObject("waterLevel");
     level["key"] = "waterLevel";
     level["label"] = "Water Level";
-    level["type"] = "sensor";
+    level["type"] = "number";
     level["value"] = waterLevel;
 
     // Current inflow
-    JsonObject inflow = telemetryData.createNestedObject();
+    JsonObject inflow = telemetryData.createNestedObject("currInflow");
     inflow["key"] = "currInflow";
     inflow["label"] = "Current Inflow";
-    inflow["type"] = "sensor";
+    inflow["type"] = "number";
     inflow["value"] = currInflow;
 
     // Pump status
-    JsonObject pump = telemetryData.createNestedObject();
+    JsonObject pump = telemetryData.createNestedObject("pumpStatus");
     pump["key"] = "pumpStatus";
     pump["label"] = "Pump Status";
-    pump["type"] = "actuator";
+    pump["type"] = "number";
     pump["value"] = pumpStatus;
 
     // Status (always 1 for online tracking)
     // Server marks device offline if no telemetry for >60 seconds
-    JsonObject status = telemetryData.createNestedObject();
+    JsonObject status = telemetryData.createNestedObject("Status");
     status["key"] = "Status";
     status["label"] = "Device Status";
-    status["type"] = "system";
+    status["type"] = "number";
     status["value"] = 1;
 
     String payload;
