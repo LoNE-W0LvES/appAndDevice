@@ -108,25 +108,18 @@ class OfflineDeviceService {
   Future<Device> getDeviceLiveData(String deviceId, {String? localIp}) async {
     final isOffline = await _offlineModeService.isOfflineModeEnabled();
 
-    // Get cached config first
-    final cachedConfig = await _getCachedDeviceConfig(deviceId);
-
     // Try local connection first if IP is available
     if (localIp != null && localIp.isNotEmpty) {
       try {
         AppConfig.offlineLog('Attempting to fetch live data from local IP: $localIp');
         final localDevice = await _getDeviceFromLocal(deviceId, localIp);
 
-        // Merge with cached config if available
-        final mergedDevice = cachedConfig != null
-            ? localDevice.copyWith(deviceConfig: cachedConfig)
-            : localDevice;
-
-        // Cache the live data
-        await _cacheDeviceData(deviceId, mergedDevice);
+        // Use the fresh config from the device and update cache
+        await _cacheDeviceData(deviceId, localDevice);
+        await _cacheDeviceConfig(deviceId, localDevice.deviceConfig);
 
         AppConfig.offlineLog('Successfully fetched live data from local IP');
-        return mergedDevice;
+        return localDevice;
       } catch (e) {
         AppConfig.offlineLog('Local connection failed: $e');
 
@@ -151,15 +144,11 @@ class OfflineDeviceService {
         final response = await _apiClient.get('/api/devices/$deviceId');
         final device = Device.fromJson(response.data);
 
-        // Use cached config if available to avoid overwriting
-        final mergedDevice = cachedConfig != null
-            ? device.copyWith(deviceConfig: cachedConfig)
-            : device;
+        // Use the fresh data from server and update cache
+        await _cacheDeviceData(deviceId, device);
+        await _cacheDeviceConfig(deviceId, device.deviceConfig);
 
-        // Cache the live data
-        await _cacheDeviceData(deviceId, mergedDevice);
-
-        return mergedDevice;
+        return device;
       } catch (e) {
         // Try to return cached data if available
         final cachedDevice = await _getCachedDeviceData(deviceId);
@@ -210,12 +199,6 @@ class OfflineDeviceService {
         final configData = configResponse.data is Map
             ? Map<String, dynamic>.from(configResponse.data as Map)
             : <String, dynamic>{};
-
-        // Debug: Log the config data received from device
-        AppConfig.offlineLog('Config data from device: $configData');
-        if (configData.containsKey('upperThreshold')) {
-          AppConfig.offlineLog('upperThreshold from device: ${configData['upperThreshold']}');
-        }
 
         final deviceData = <String, dynamic>{
           'id': deviceId,
