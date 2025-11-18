@@ -76,8 +76,13 @@ bool configFetched = false;
 SemaphoreHandle_t configMutex = NULL;  // Protect deviceConfig and lastSyncedConfig
 TaskHandle_t telemetryTaskHandle = NULL;
 TaskHandle_t controlTaskHandle = NULL;
+TaskHandle_t controlUploadTaskHandle = NULL;
 TaskHandle_t configFetchTaskHandle = NULL;
 TaskHandle_t configSyncTaskHandle = NULL;
+
+// Task limiting to prevent too many concurrent tasks
+#define MAX_CONCURRENT_SERVER_TASKS 2  // Maximum 2 server tasks at once
+volatile int activeServerTasks = 0;     // Counter for active server tasks
 
 // ============================================================================
 // FORWARD DECLARATIONS
@@ -85,6 +90,7 @@ TaskHandle_t configSyncTaskHandle = NULL;
 
 void syncConfigToServer();
 void fetchConfigFromServer();
+void uploadControlData();
 
 // ============================================================================
 // CALLBACK FUNCTIONS
@@ -339,7 +345,8 @@ bool connectToBackend() {
     webServer.begin(DEVICE_ID, &apiClient);
     webServer.setPumpControlCallback(onPumpControl);
     webServer.setWiFiSaveCallback(onWiFiSave);
-    webServer.setConfigSyncCallback(syncConfigToServer);  // Immediate sync when config changes
+    webServer.setConfigSyncCallback(syncConfigToServer);    // Immediate async sync when config changes
+    webServer.setControlSyncCallback(uploadControlData);    // Immediate async sync when control changes
 
     Serial.println("[Main] Local webserver started - device accessible at http://" + getIPAddress());
 
@@ -416,10 +423,12 @@ bool connectToBackend() {
  */
 void uploadTelemetryTask(void* parameter) {
     Serial.println("[AsyncTask] Telemetry upload started");
+    activeServerTasks++;  // Increment active task counter
 
     // Don't attempt server calls in AP mode (no internet) or when not authenticated
     if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
         Serial.println("[AsyncTask] Cannot upload telemetry - not in client mode or not authenticated");
+        activeServerTasks--;  // Decrement before exit
         telemetryTaskHandle = NULL;
         vTaskDelete(NULL);
         return;
@@ -435,7 +444,41 @@ void uploadTelemetryTask(void* parameter) {
         Serial.println("[AsyncTask] Failed to upload telemetry");
     }
 
+    activeServerTasks--;  // Decrement after completion
     telemetryTaskHandle = NULL;
+    vTaskDelete(NULL);
+}
+
+/**
+ * Async task: Upload control data to backend
+ * Runs in background to prevent blocking main loop during network delays
+ * Called immediately when local webserver receives control update from app
+ */
+void uploadControlTask(void* parameter) {
+    Serial.println("[AsyncTask] Control upload started");
+    activeServerTasks++;  // Increment active task counter
+
+    // Don't attempt server calls in AP mode (no internet) or when not authenticated
+    if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
+        Serial.println("[AsyncTask] Cannot upload control - not in client mode or not authenticated");
+        activeServerTasks--;  // Decrement before exit
+        controlUploadTaskHandle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Take mutex before accessing controlData
+    if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
+        if (apiClient.uploadControl(controlData)) {
+            Serial.println("[AsyncTask] Control data uploaded to server successfully");
+        } else {
+            Serial.println("[AsyncTask] Failed to upload control data to server");
+        }
+        xSemaphoreGive(configMutex);
+    }
+
+    activeServerTasks--;  // Decrement after completion
+    controlUploadTaskHandle = NULL;
     vTaskDelete(NULL);
 }
 
@@ -445,10 +488,12 @@ void uploadTelemetryTask(void* parameter) {
  */
 void fetchControlDataTask(void* parameter) {
     Serial.println("[AsyncTask] Control fetch started");
+    activeServerTasks++;  // Increment active task counter
 
     // Don't attempt server calls in AP mode (no internet) or when not authenticated
     if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
         Serial.println("[AsyncTask] Cannot fetch control - not in client mode or not authenticated");
+        activeServerTasks--;  // Decrement before exit
         controlTaskHandle = NULL;
         vTaskDelete(NULL);
         return;
@@ -531,6 +576,7 @@ void fetchControlDataTask(void* parameter) {
         Serial.println("[AsyncTask] Failed to fetch control data");
     }
 
+    activeServerTasks--;  // Decrement after completion
     controlTaskHandle = NULL;
     vTaskDelete(NULL);
 }
@@ -541,10 +587,12 @@ void fetchControlDataTask(void* parameter) {
  */
 void fetchConfigFromServerTask(void* parameter) {
     Serial.println("[AsyncTask] Config fetch started");
+    activeServerTasks++;  // Increment active task counter
 
     // Don't attempt server calls in AP mode (no internet) or when not authenticated
     if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
         Serial.println("[AsyncTask] Cannot fetch config - not in client mode or not authenticated");
+        activeServerTasks--;  // Decrement before exit
         configFetchTaskHandle = NULL;
         vTaskDelete(NULL);
         return;
@@ -553,6 +601,7 @@ void fetchConfigFromServerTask(void* parameter) {
     // IMPORTANT: Only fetch FROM server if we don't have pending changes TO server
     if (apiClient.hasPendingConfigSync()) {
         Serial.println("[AsyncTask] Skipping server fetch - pending local changes to sync first");
+        activeServerTasks--;  // Decrement before exit
         configFetchTaskHandle = NULL;
         vTaskDelete(NULL);
         return;
@@ -630,6 +679,7 @@ void fetchConfigFromServerTask(void* parameter) {
         xSemaphoreGive(configMutex);
     }
 
+    activeServerTasks--;  // Decrement after completion
     configFetchTaskHandle = NULL;
     vTaskDelete(NULL);
 }
@@ -640,10 +690,12 @@ void fetchConfigFromServerTask(void* parameter) {
  */
 void syncConfigToServerTask(void* parameter) {
     Serial.println("[AsyncTask] Config sync started");
+    activeServerTasks++;  // Increment active task counter
 
     // Don't attempt server calls in AP mode (no internet) or when not authenticated
     if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
         Serial.println("[AsyncTask] Cannot sync config - not in client mode or not authenticated");
+        activeServerTasks--;  // Decrement before exit
         configSyncTaskHandle = NULL;
         vTaskDelete(NULL);
         return;
@@ -696,6 +748,7 @@ void syncConfigToServerTask(void* parameter) {
         xSemaphoreGive(configMutex);
     }
 
+    activeServerTasks--;  // Decrement after completion
     configSyncTaskHandle = NULL;
     vTaskDelete(NULL);
 }
@@ -737,6 +790,13 @@ void uploadTelemetry() {
         return;
     }
 
+    // Check if too many tasks are running (prevent device crash)
+    if (activeServerTasks >= MAX_CONCURRENT_SERVER_TASKS) {
+        Serial.printf("[Main] Too many active tasks (%d/%d), skipping telemetry upload\n",
+                     activeServerTasks, MAX_CONCURRENT_SERVER_TASKS);
+        return;
+    }
+
     // Create async task for telemetry upload
     BaseType_t result = xTaskCreate(
         uploadTelemetryTask,     // Task function
@@ -754,6 +814,41 @@ void uploadTelemetry() {
 }
 
 /**
+ * Upload control data to backend (called immediately when app updates control)
+ * Launches async task to prevent blocking main loop
+ * Ensures remote users see updates quickly (not waiting for 5-minute cycle)
+ */
+void uploadControlData() {
+    // Skip if task is already running
+    if (controlUploadTaskHandle != NULL) {
+        Serial.println("[Main] Control upload task already running, skipping...");
+        return;
+    }
+
+    // Check if too many tasks are running (prevent device crash)
+    if (activeServerTasks >= MAX_CONCURRENT_SERVER_TASKS) {
+        Serial.printf("[Main] Too many active tasks (%d/%d), skipping control upload\n",
+                     activeServerTasks, MAX_CONCURRENT_SERVER_TASKS);
+        return;
+    }
+
+    // Create async task for control upload
+    BaseType_t result = xTaskCreate(
+        uploadControlTask,       // Task function
+        "ControlUpload",         // Task name
+        4096,                    // Stack size (bytes)
+        NULL,                    // Task parameters
+        1,                       // Priority (1 = low, higher than idle)
+        &controlUploadTaskHandle // Task handle
+    );
+
+    if (result != pdPASS) {
+        Serial.println("[Main] Failed to create control upload task");
+        controlUploadTaskHandle = NULL;
+    }
+}
+
+/**
  * Fetch control data from backend (every 5 minutes)
  * Launches async task to prevent blocking main loop
  */
@@ -761,6 +856,13 @@ void fetchControlData() {
     // Skip if task is already running
     if (controlTaskHandle != NULL) {
         Serial.println("[Main] Control fetch task already running, skipping...");
+        return;
+    }
+
+    // Check if too many tasks are running (prevent device crash)
+    if (activeServerTasks >= MAX_CONCURRENT_SERVER_TASKS) {
+        Serial.printf("[Main] Too many active tasks (%d/%d), skipping control fetch\n",
+                     activeServerTasks, MAX_CONCURRENT_SERVER_TASKS);
         return;
     }
 
@@ -817,6 +919,13 @@ void syncConfigToServer() {
         return;
     }
 
+    // Check if too many tasks are running (prevent device crash)
+    if (activeServerTasks >= MAX_CONCURRENT_SERVER_TASKS) {
+        Serial.printf("[Main] Too many active tasks (%d/%d), skipping config sync\n",
+                     activeServerTasks, MAX_CONCURRENT_SERVER_TASKS);
+        return;
+    }
+
     // Create async task for config sync
     BaseType_t result = xTaskCreate(
         syncConfigToServerTask,  // Task function
@@ -843,6 +952,13 @@ void fetchConfigFromServer() {
     // Skip if task is already running
     if (configFetchTaskHandle != NULL) {
         Serial.println("[Main] Config fetch task already running, skipping...");
+        return;
+    }
+
+    // Check if too many tasks are running (prevent device crash)
+    if (activeServerTasks >= MAX_CONCURRENT_SERVER_TASKS) {
+        Serial.printf("[Main] Too many active tasks (%d/%d), skipping config fetch\n",
+                     activeServerTasks, MAX_CONCURRENT_SERVER_TASKS);
         return;
     }
 

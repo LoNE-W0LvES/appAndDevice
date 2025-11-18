@@ -21,7 +21,8 @@ WebServer::WebServer()
       apiClient(nullptr),
       pumpCallback(nullptr),
       wifiSaveCallback(nullptr),
-      configSyncCallback(nullptr) {
+      configSyncCallback(nullptr),
+      controlSyncCallback(nullptr) {
 }
 
 void WebServer::begin(const String& devId, APIClient* apiCli) {
@@ -430,10 +431,12 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
         Serial.println("  Merge result: Values changed after 3-way merge");
     }
 
-    // NOTE: Control data sync to server is handled by periodic fetch/upload cycle
-    // No immediate upload needed - prevents blocking when server is slow/unreachable
-    // The device fetches control from server every 5 minutes, and if local is newer,
-    // it will naturally upload the changes during the next sync cycle
+    // Trigger async control sync callback if provided and values changed
+    // This uploads control data to server immediately (non-blocking) so remote users see updates
+    if (controlSyncCallback != nullptr && changed) {
+        Serial.println("[WebServer] Triggering async control sync callback...");
+        controlSyncCallback();
+    }
 
     // Send success response with merged values
     StaticJsonDocument<512> responseDoc;
@@ -846,6 +849,10 @@ void WebServer::setWiFiSaveCallback(WiFiSaveCallback callback) {
 
 void WebServer::setConfigSyncCallback(ConfigSyncCallback callback) {
     configSyncCallback = callback;
+}
+
+void WebServer::setControlSyncCallback(ControlSyncCallback callback) {
+    controlSyncCallback = callback;
 }
 
 void WebServer::handle() {
