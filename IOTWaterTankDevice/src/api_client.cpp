@@ -447,13 +447,27 @@ bool APIClient::fetchAndApplyServerConfig(DeviceConfig& config) {
     // Delegate to device config manager
     bool result = deviceConfigManager.fetchAndApplyServerConfig(config);
 
-    // If config was fetched from direct format endpoint (no timestamps),
-    // use current server time as lastModified (only if time is synced)
+    // If config was fetched from direct format endpoint (no per-field timestamps),
+    // use current server time for all fields (only if time is synced)
     // Note: This happens regardless of whether values changed (result true/false)
-    if (config.lastModified == 0 && isTimeSynced()) {
-        config.lastModified = getCurrentTimestamp();
-        DEBUG_PRINTF("[API] Set config lastModified to current server time: %llu\n",
-                    config.lastModified);
+    if (isTimeSynced()) {
+        uint64_t currentTime = getCurrentTimestamp();
+        bool anyZero = false;
+
+        if (config.upperThresholdLastModified == 0) { config.upperThresholdLastModified = currentTime; anyZero = true; }
+        if (config.lowerThresholdLastModified == 0) { config.lowerThresholdLastModified = currentTime; anyZero = true; }
+        if (config.tankHeightLastModified == 0) { config.tankHeightLastModified = currentTime; anyZero = true; }
+        if (config.tankWidthLastModified == 0) { config.tankWidthLastModified = currentTime; anyZero = true; }
+        if (config.tankShapeLastModified == 0) { config.tankShapeLastModified = currentTime; anyZero = true; }
+        if (config.usedTotalLastModified == 0) { config.usedTotalLastModified = currentTime; anyZero = true; }
+        if (config.maxInflowLastModified == 0) { config.maxInflowLastModified = currentTime; anyZero = true; }
+        if (config.forceUpdateLastModified == 0) { config.forceUpdateLastModified = currentTime; anyZero = true; }
+        if (config.sensorFilterLastModified == 0) { config.sensorFilterLastModified = currentTime; anyZero = true; }
+        if (config.ipAddressLastModified == 0) { config.ipAddressLastModified = currentTime; anyZero = true; }
+
+        if (anyZero) {
+            DEBUG_PRINTF("[API] Set missing field timestamps to current server time: %llu\n", currentTime);
+        }
     }
 
     return result;

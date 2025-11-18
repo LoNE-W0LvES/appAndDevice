@@ -44,17 +44,25 @@ bool DeviceConfigManager::fetchAndApplyServerConfig(DeviceConfig& config) {
 
     // Compare only VALUES, ignore timestamps
     if (configValuesChanged(config, serverConfig)) {
-        // Values are different - apply server config
+        // Values are different - apply server config (including per-field timestamps)
         config = serverConfig;
         Serial.println("[DeviceConfig] Config updated FROM server (values changed)");
         Serial.println("  Upper Threshold: " + String(config.upperThreshold));
         Serial.println("  Lower Threshold: " + String(config.lowerThreshold));
-        Serial.println("  Last Modified: " + String((unsigned long)config.lastModified));
         return true;
     } else {
-        // Values identical - just update timestamp for reference
-        Serial.println("[DeviceConfig] Config values identical to server - no update needed");
-        config.lastModified = serverConfig.lastModified;
+        // Values identical - update timestamps from server for reference
+        Serial.println("[DeviceConfig] Config values identical to server - updating timestamps only");
+        config.upperThresholdLastModified = serverConfig.upperThresholdLastModified;
+        config.lowerThresholdLastModified = serverConfig.lowerThresholdLastModified;
+        config.tankHeightLastModified = serverConfig.tankHeightLastModified;
+        config.tankWidthLastModified = serverConfig.tankWidthLastModified;
+        config.tankShapeLastModified = serverConfig.tankShapeLastModified;
+        config.usedTotalLastModified = serverConfig.usedTotalLastModified;
+        config.maxInflowLastModified = serverConfig.maxInflowLastModified;
+        config.forceUpdateLastModified = serverConfig.forceUpdateLastModified;
+        config.sensorFilterLastModified = serverConfig.sensorFilterLastModified;
+        config.ipAddressLastModified = serverConfig.ipAddressLastModified;
         return false;  // No actual change
     }
 }
@@ -81,8 +89,18 @@ bool DeviceConfigManager::sendConfigWithPriority(DeviceConfig& config) {
     }
 
     if (responseDoc["success"] == true) {
-        // Server accepted and assigned timestamp
-        config.lastModified = responseDoc["timestamp"];
+        // Server accepted and assigned timestamp - update all field timestamps
+        uint64_t serverTimestamp = responseDoc["timestamp"];
+        config.upperThresholdLastModified = serverTimestamp;
+        config.lowerThresholdLastModified = serverTimestamp;
+        config.tankHeightLastModified = serverTimestamp;
+        config.tankWidthLastModified = serverTimestamp;
+        config.tankShapeLastModified = serverTimestamp;
+        config.usedTotalLastModified = serverTimestamp;
+        config.maxInflowLastModified = serverTimestamp;
+        config.forceUpdateLastModified = serverTimestamp;
+        config.sensorFilterLastModified = serverTimestamp;
+        config.ipAddressLastModified = serverTimestamp;
         Serial.println("[DeviceConfig] Config synced TO server with priority");
         return true;
     }
