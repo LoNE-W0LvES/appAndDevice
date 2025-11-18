@@ -29,6 +29,9 @@
 #include "button_handler.h"
 #include "webserver.h"
 #include "ota_updater.h"
+#include "handle_control_data.h"
+#include "handle_config_data.h"
+#include "handle_telemetry_data.h"
 
 // ============================================================================
 // GLOBAL OBJECTS
@@ -42,10 +45,17 @@ ButtonHandler buttonHandler;
 WebServer webServer;
 OTAUpdater otaUpdater;
 
+// 3-way sync handlers
+ControlDataHandler controlHandler;
+ConfigDataHandler configHandler;
+TelemetryDataHandler telemetryHandler;
+
 // ============================================================================
 // GLOBAL STATE
 // ============================================================================
 
+// Old config/control data - DEPRECATED, use handlers instead
+// TODO: Remove after full integration
 DeviceConfig deviceConfig;
 DeviceConfig lastSyncedConfig;  // Track last synced config (oldData)
 ControlData controlData;
@@ -224,17 +234,30 @@ void initializeSystem() {
     // Initialize storage manager
     storageManager.begin();
 
+    // Initialize 3-way sync handlers
+    controlHandler.begin();
+    configHandler.begin();
+    telemetryHandler.begin();
+    Serial.println("[Main] Sync handlers initialized");
+
     // Load device config from NVS if available
     // This allows device to work offline without server on first boot
-    if (storageManager.loadDeviceConfig(
-            deviceConfig.upperThreshold,
-            deviceConfig.lowerThreshold,
-            deviceConfig.tankHeight,
-            deviceConfig.tankWidth,
-            deviceConfig.tankShape)) {
+    float upperThr, lowerThr, tankH, tankW;
+    String tankSh;
+    if (storageManager.loadDeviceConfig(upperThr, lowerThr, tankH, tankW, tankSh)) {
         Serial.println("[Main] Device config loaded from NVS storage");
-        Serial.printf("  Tank: %.0f x %.0f cm (%s)\n",
-                     deviceConfig.tankHeight, deviceConfig.tankWidth, deviceConfig.tankShape.c_str());
+        Serial.printf("  Tank: %.0f x %.0f cm (%s)\n", tankH, tankW, tankSh.c_str());
+
+        // Update config handler with loaded values
+        configHandler.updateSelf(upperThr, lowerThr, tankH, tankW, tankSh,
+                                 0.0f, 0.0f, false, true, "");
+
+        // Also update old deviceConfig for backward compatibility
+        deviceConfig.upperThreshold = upperThr;
+        deviceConfig.lowerThreshold = lowerThr;
+        deviceConfig.tankHeight = tankH;
+        deviceConfig.tankWidth = tankW;
+        deviceConfig.tankShape = tankSh;
     } else {
         Serial.println("[Main] No stored config - will fetch from server on connect");
     }
