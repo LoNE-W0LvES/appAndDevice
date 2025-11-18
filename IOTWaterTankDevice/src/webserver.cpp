@@ -380,14 +380,20 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
     bool configUpdateValue = false;
     uint64_t configUpdateTs = 0;
 
+    // Get current timestamp for values without explicit timestamps
+    // IMPORTANT: Use current time, NOT 0! (0 would lose to API ts=0 in merge)
+    uint64_t currentTime = (apiClient != nullptr) ? apiClient->getCurrentTimestamp() : millis();
+
     if (hasPumpSwitch) {
         pumpSwitchValue = doc["pumpSwitch"]["value"] | false;
-        pumpSwitchTs = doc["pumpSwitch"]["lastModified"] | (uint64_t)0;
+        // If app provides timestamp, use it; otherwise use current time
+        pumpSwitchTs = doc["pumpSwitch"]["lastModified"] | currentTime;
     }
 
     if (hasConfigUpdate) {
         configUpdateValue = doc["config_update"]["value"] | false;
-        configUpdateTs = doc["config_update"]["lastModified"] | (uint64_t)0;
+        // If app provides timestamp, use it; otherwise use current time
+        configUpdateTs = doc["config_update"]["lastModified"] | currentTime;
     }
 
     // Update handler with values from Local (app webserver)
@@ -589,34 +595,38 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
     DEBUG_RESPONSE_WS_PRINTLN("[WebServer] Received config JSON from app:");
     DEBUG_RESPONSE_WS_PRINTLN(jsonBuffer);
 
+    // Get current timestamp for values without explicit timestamps
+    // IMPORTANT: Use current time, NOT 0! (0 would lose to API ts=0 in merge)
+    uint64_t currentTime = (apiClient != nullptr) ? apiClient->getCurrentTimestamp() : millis();
+
     // Extract all 10 config fields with timestamps
     float localUpperThreshold = doc["upperThreshold"]["value"] | configHandler.getUpperThreshold();
-    uint64_t localUpperThresholdTs = doc["upperThreshold"]["lastModified"] | (uint64_t)0;
+    uint64_t localUpperThresholdTs = doc["upperThreshold"]["lastModified"] | currentTime;
 
     float localLowerThreshold = doc["lowerThreshold"]["value"] | configHandler.getLowerThreshold();
-    uint64_t localLowerThresholdTs = doc["lowerThreshold"]["lastModified"] | (uint64_t)0;
+    uint64_t localLowerThresholdTs = doc["lowerThreshold"]["lastModified"] | currentTime;
 
     float localTankHeight = doc["tankHeight"]["value"] | configHandler.getTankHeight();
-    uint64_t localTankHeightTs = doc["tankHeight"]["lastModified"] | (uint64_t)0;
+    uint64_t localTankHeightTs = doc["tankHeight"]["lastModified"] | currentTime;
 
     float localTankWidth = doc["tankWidth"]["value"] | configHandler.getTankWidth();
-    uint64_t localTankWidthTs = doc["tankWidth"]["lastModified"] | (uint64_t)0;
+    uint64_t localTankWidthTs = doc["tankWidth"]["lastModified"] | currentTime;
 
     String localTankShape = doc["tankShape"]["value"] | configHandler.getTankShape();
-    uint64_t localTankShapeTs = doc["tankShape"]["lastModified"] | (uint64_t)0;
+    uint64_t localTankShapeTs = doc["tankShape"]["lastModified"] | currentTime;
 
     float localUsedTotal = doc["UsedTotal"]["value"] | configHandler.getUsedTotal();
-    uint64_t localUsedTotalTs = doc["UsedTotal"]["lastModified"] | (uint64_t)0;
+    uint64_t localUsedTotalTs = doc["UsedTotal"]["lastModified"] | currentTime;
 
     float localMaxInflow = doc["maxInflow"]["value"] | configHandler.getMaxInflow();
-    uint64_t localMaxInflowTs = doc["maxInflow"]["lastModified"] | (uint64_t)0;
+    uint64_t localMaxInflowTs = doc["maxInflow"]["lastModified"] | currentTime;
 
     bool localForceUpdate = doc["force_update"]["value"] | configHandler.getForceUpdate();
-    uint64_t localForceUpdateTs = doc["force_update"]["lastModified"] | (uint64_t)0;
+    uint64_t localForceUpdateTs = doc["force_update"]["lastModified"] | currentTime;
 
 
     String localIpAddress = doc["ip_address"]["value"] | configHandler.getIpAddress();
-    uint64_t localIpAddressTs = doc["ip_address"]["lastModified"] | (uint64_t)0;
+    uint64_t localIpAddressTs = doc["ip_address"]["lastModified"] | currentTime;
 
     // Update handler with values from Local (app webserver)
     configHandler.updateFromLocal(
