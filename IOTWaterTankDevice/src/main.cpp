@@ -274,9 +274,33 @@ bool connectToBackend() {
         return false;
     }
 
-    // Initialize API client
+    // ============================================================================
+    // WiFi connected - Start webserver immediately for local control
+    // ============================================================================
+    Serial.println("[Main] WiFi connected - Starting local webserver");
+    Serial.println("[Main] Local IP: " + getIPAddress());
+
+    // Update network info
+    displayManager.setNetworkInfo(
+        getIPAddress(),
+        "Connected"
+    );
+
+    // Initialize API client (needed for webserver even if not authenticated)
     String hardwareId = getMACAddress();
     apiClient.begin(hardwareId);
+
+    // Start web server immediately for local control (works even if backend is unreachable)
+    webServer.begin(DEVICE_ID, &apiClient);
+    webServer.setPumpControlCallback(onPumpControl);
+    webServer.setWiFiSaveCallback(onWiFiSave);
+    webServer.setConfigSyncCallback(syncConfigToServer);  // Immediate sync when config changes
+
+    Serial.println("[Main] Local webserver started - device accessible at http://" + getIPAddress());
+
+    // ============================================================================
+    // Try to authenticate with backend (optional - device works locally without it)
+    // ============================================================================
 
     // Login to get JWT token if not authenticated
     if (!apiClient.isAuthenticated()) {
@@ -285,19 +309,19 @@ bool connectToBackend() {
         bool hasCredentials = getDashboardCredentials(dashUsername, dashPassword);
 
         if (!hasCredentials || dashUsername.length() == 0 || dashPassword.length() == 0) {
-            Serial.println("[Main] ERROR: No dashboard credentials found!");
-            Serial.println("[Main] Cannot connect to backend without credentials");
-            displayManager.showMessage("Error", "No credentials", 3000);
-            return false;
+            Serial.println("[Main] WARNING: No dashboard credentials found!");
+            Serial.println("[Main] Device will work locally but cannot sync with backend");
+            displayManager.showMessage("Local Mode", "No backend sync", 3000);
+            return false;  // Local mode only
         }
 
         displayManager.showMessage("Backend", "Logging in...", 0);
 
         if (!apiClient.loginDevice(dashUsername, dashPassword)) {
-            Serial.println("[Main] ERROR: Device login failed!");
-            Serial.println("[Main] Ensure device is created by admin in dashboard");
-            displayManager.showMessage("Error", "Login failed", 3000);
-            return false;
+            Serial.println("[Main] WARNING: Device login failed!");
+            Serial.println("[Main] Device will work locally but cannot sync with backend");
+            displayManager.showMessage("Local Mode", "Login failed", 3000);
+            return false;  // Local mode only
         }
 
         Serial.println("[Main] Device logged in successfully");
@@ -331,18 +355,6 @@ bool connectToBackend() {
     );
 
     Serial.println("[Main] Device online sync complete, config applied");
-
-    // Update network info
-    displayManager.setNetworkInfo(
-        getIPAddress(),
-        "Connected"
-    );
-
-    // Start web server
-    webServer.begin(DEVICE_ID, &apiClient);
-    webServer.setPumpControlCallback(onPumpControl);
-    webServer.setWiFiSaveCallback(onWiFiSave);
-    webServer.setConfigSyncCallback(syncConfigToServer);  // Immediate sync when config changes
 
     displayManager.showMessage("Ready", "System online", 2000);
 
