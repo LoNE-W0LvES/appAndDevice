@@ -46,8 +46,10 @@ class _WaterTankControlScreenState extends State<WaterTankControlScreen>
     _pulseAnimation = Tween<double>(begin: 0.3, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
-    // Sync timestamp when screen loads
-    _syncTimestamp();
+    // Sync timestamp when screen loads (schedule after build completes)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncTimestamp();
+    });
     // Start auto-refresh timer (every 3 seconds)
     _startAutoRefresh();
   }
@@ -70,19 +72,88 @@ class _WaterTankControlScreenState extends State<WaterTankControlScreen>
   Future<void> _syncTimestamp() async {
     final deviceProvider = context.read<DeviceProvider>();
     final timestampProvider = context.read<TimestampProvider>();
+    final offlineProvider = context.read<OfflineProvider>();
 
     if (deviceProvider.selectedDevice != null) {
       final device = deviceProvider.selectedDevice!;
       // Get local IP from device model (stored for offline mode)
       final localIp = device.localIp;
 
+      // Check if phone time is valid (after November 2024)
+      final phoneTime = DateTime.now();
+      final minValidTime = DateTime(2024, 11, 1); // November 2024
+
+      if (phoneTime.isBefore(minValidTime)) {
+        // Phone time is in the past - show warning
+        if (mounted) {
+          _showInvalidTimeWarning();
+        }
+        return; // Don't sync with invalid phone time
+      }
+
       if (localIp != null && localIp.isNotEmpty) {
-        await timestampProvider.syncDevice(
-          device.deviceId,
-          localIp: localIp,
-        );
+        // In offline mode, sync with device using phone's Unix time
+        if (offlineProvider.isOfflineModeEnabled) {
+          AppConfig.offlineLog('Offline mode: Syncing timestamp with device only');
+          await timestampProvider.syncDevice(
+            device.deviceId,
+            localIp: localIp,
+          );
+        } else {
+          // Online mode: sync with both server and device
+          await timestampProvider.syncDevice(
+            device.deviceId,
+            localIp: localIp,
+          );
+        }
       }
     }
+  }
+
+  /// Show warning dialog for invalid phone time
+  void _showInvalidTimeWarning() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+            SizedBox(width: 12),
+            Text('Invalid Phone Time'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Your phone\'s date/time appears to be incorrect.',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 12),
+            Text('Current phone time: ${DateTime.now().toString().split('.')[0]}'),
+            SizedBox(height: 8),
+            Text('Please update your phone\'s:'),
+            SizedBox(height: 8),
+            Text('• Date and Time'),
+            Text('• Timezone'),
+            Text('• Enable "Set time automatically"'),
+            SizedBox(height: 12),
+            Text(
+              'This is required for accurate device synchronization.',
+              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

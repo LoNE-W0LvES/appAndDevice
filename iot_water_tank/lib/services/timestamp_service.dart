@@ -24,7 +24,7 @@ import 'offline_mode_service.dart';
 /// the phone's cellular-synced clock as a reliable fallback.
 class TimestampService {
   static const Duration _timeout = Duration(seconds: 10);  // Increased for ESP32 processing time
-  static const int _maxDriftMs = 2000; // 2 seconds max acceptable drift (user requirement)
+  static const int _maxDriftMs = 5000; // 5 seconds max acceptable drift (user requirement: 4-5 seconds)
   final ApiClient _apiClient = ApiClient();
   final OfflineModeService _offlineModeService = OfflineModeService();
 
@@ -163,23 +163,36 @@ class TimestampService {
     }
 
     try {
-      // Step 1: Get reference timestamp (server or app system time)
+      // Step 1: Get reference timestamp (server or app Unix time)
       int referenceTimestamp;
       String timestampSource;
 
-      final serverTimestamp = await getServerTimestamp(deviceId);
+      // In offline mode, always use phone's Unix time (cellular/WiFi synced)
+      final isOffline = await _offlineModeService.isOfflineModeEnabled();
 
-      if (serverTimestamp != null) {
-        referenceTimestamp = serverTimestamp.serverTime;
-        timestampSource = 'server';
-        AppConfig.deviceLog('Server timestamp obtained: $referenceTimestamp');
-      } else {
-        // Fallback to app's system time (phone clock from cellular/WiFi)
+      if (isOffline) {
+        // Offline mode: Use phone's Unix time directly
         referenceTimestamp = DateTime.now().millisecondsSinceEpoch;
-        timestampSource = 'app-system';
+        timestampSource = 'phone-unix-time';
         AppConfig.deviceLog(
-          'Server unavailable. Using app system time: $referenceTimestamp',
+          'Offline mode: Using phone Unix time: $referenceTimestamp',
         );
+      } else {
+        // Online mode: Try server first, then fallback to phone time
+        final serverTimestamp = await getServerTimestamp(deviceId);
+
+        if (serverTimestamp != null) {
+          referenceTimestamp = serverTimestamp.serverTime;
+          timestampSource = 'server';
+          AppConfig.deviceLog('Server timestamp obtained: $referenceTimestamp');
+        } else {
+          // Fallback to app's system time (phone clock from cellular/WiFi)
+          referenceTimestamp = DateTime.now().millisecondsSinceEpoch;
+          timestampSource = 'phone-unix-time';
+          AppConfig.deviceLog(
+            'Server unavailable. Using phone Unix time: $referenceTimestamp',
+          );
+        }
       }
 
       // Step 2: Get device's current timestamp state
@@ -220,6 +233,11 @@ class TimestampService {
           if (driftAbs > _maxDriftMs) {
             needsCorrection = true;
             correctionReason = 'drift ${(driftAbs / 1000).toStringAsFixed(1)}s exceeds ${(_maxDriftMs / 1000).toStringAsFixed(1)}s threshold';
+            AppConfig.deviceLog(
+              'Large drift detected! Device: ${deviceTimestamp.timestamp}ms, '
+              '$timestampSource: ${referenceTimestamp}ms, '
+              'Difference: ${currentDrift}ms (${(currentDrift / 1000).toStringAsFixed(1)}s)',
+            );
           }
         }
 
