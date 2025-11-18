@@ -8,12 +8,14 @@ import '../utils/api_exception.dart';
 import '../config/app_config.dart';
 import 'api_client.dart';
 import 'offline_mode_service.dart';
+import 'timestamp_service.dart';
 
 /// Service for offline-capable device operations
 /// Tries local IP first, then falls back to server (unless in offline mode)
 class OfflineDeviceService {
   final ApiClient _apiClient;
   final OfflineModeService _offlineModeService;
+  final TimestampService _timestampService;
   Dio? _localDio;
 
   // In-memory cache to avoid repeatedly reading from SharedPreferences
@@ -21,7 +23,8 @@ class OfflineDeviceService {
 
   OfflineDeviceService()
       : _apiClient = ApiClient(),
-        _offlineModeService = OfflineModeService();
+        _offlineModeService = OfflineModeService(),
+        _timestampService = TimestampService();
 
   Future<void> initialize() async {
     await _apiClient.initialize();
@@ -245,8 +248,9 @@ class OfflineDeviceService {
     String type, {
     String? localIp,
   }) async {
-    // Use priority flag (timestamp=0) for app commands - they always take precedence
-    final timestamp = 0;
+    // Get current timestamp for app commands
+    // Use current time (NOT 0!) so local updates win during merge
+    final timestamp = await _timestampService.getCurrentTimestamp(deviceId, localIp: localIp);
     final isOffline = await _offlineModeService.isOfflineModeEnabled();
 
     // Try local connection first if IP is available
@@ -406,12 +410,15 @@ class OfflineDeviceService {
     // Use device's local endpoint: POST /{deviceId}/config
     final url = 'http://$localIp/$deviceId/config';
 
+    // Get current timestamp for app commands
+    // Use current time (NOT 0!) so local updates win during merge
+    final timestamp = await _timestampService.getCurrentTimestamp(deviceId, localIp: localIp);
+
     // Convert config to JSON format expected by device
-    // Use lastModified=0 (priority flag) for local updates from app
     final configData = deviceConfig.map(
       (key, value) => MapEntry(key, {
         'value': value.value,
-        'lastModified': 0,  // Priority flag - app commands always take precedence
+        'lastModified': timestamp,  // Use current time so local updates win
       }),
     );
 
