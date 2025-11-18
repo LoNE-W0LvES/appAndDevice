@@ -109,51 +109,79 @@ class _DeviceConfigEditScreenState extends State<DeviceConfigEditScreen> {
 
       // Check if offline mode is enabled
       final isOffline = await _offlineModeService.isOfflineModeEnabled();
+      final localIp = widget.device.localIp;
 
-      if (isOffline) {
-        // Offline mode: Use OfflineDeviceService with local IP
-        final localIp = widget.device.localIp;
+      // Track what was updated
+      bool localUpdated = false;
+      bool serverUpdated = false;
 
-        if (localIp == null || localIp.isEmpty) {
-          throw ApiException(
-            message: 'Device local IP not set. Please set IP in device settings.',
+      // 1. Update LOCAL device if IP is available
+      if (localIp != null && localIp.isNotEmpty) {
+        try {
+          AppConfig.configLog('Updating local device at $localIp...');
+          await _offlineDeviceService.updateDeviceConfig(
+            widget.device.deviceId,
+            _modifiedConfig,  // Send ALL fields
+            localIp: localIp,
           );
+          localUpdated = true;
+          AppConfig.configLog('Local device updated successfully');
+        } catch (e) {
+          AppConfig.configLog('Local device update failed: $e');
+          // Continue to try server update
         }
-
-        // Send FULL config to device (not just changed fields)
-        // This ensures device always has complete configuration
-        await _offlineDeviceService.updateDeviceConfig(
-          widget.device.deviceId,
-          _modifiedConfig,  // Send ALL fields
-          localIp: localIp,
-        );
-
-        if (!mounted) return;
-
-        // Update provider with full modified config
-        final updatedDevice = widget.device.copyWith(deviceConfig: _modifiedConfig);
-        context.read<DeviceProvider>().setSelectedDevice(updatedDevice);
-      } else {
-        // Online mode: Use DeviceService (this will also set config_update = true)
-        // Send FULL config to server (not just changed fields)
-        final updatedDevice = await _deviceService.updateDeviceConfig(
-          widget.device.id,
-          _modifiedConfig,  // Send ALL fields
-        );
-
-        if (!mounted) return;
-
-        // Update provider
-        context.read<DeviceProvider>().setSelectedDevice(updatedDevice);
       }
 
       if (!mounted) return;
 
-      // Show success message
+      // 2. Update SERVER if NOT in offline mode
+      if (!isOffline) {
+        try {
+          AppConfig.configLog('Updating server...');
+          final updatedDevice = await _deviceService.updateDeviceConfig(
+            widget.device.id,
+            _modifiedConfig,  // Send ALL fields
+          );
+          serverUpdated = true;
+          AppConfig.configLog('Server updated successfully');
+
+          // Update provider with server response
+          context.read<DeviceProvider>().setSelectedDevice(updatedDevice);
+        } catch (e) {
+          AppConfig.configLog('Server update failed: $e');
+
+          // If local was updated but server failed, still update provider with local data
+          if (localUpdated) {
+            final updatedDevice = widget.device.copyWith(deviceConfig: _modifiedConfig);
+            context.read<DeviceProvider>().setSelectedDevice(updatedDevice);
+          } else {
+            // Both failed
+            rethrow;
+          }
+        }
+      } else {
+        // Offline mode: only local update, update provider with local data
+        if (localUpdated) {
+          final updatedDevice = widget.device.copyWith(deviceConfig: _modifiedConfig);
+          context.read<DeviceProvider>().setSelectedDevice(updatedDevice);
+        } else {
+          throw ApiException(
+            message: 'Device local IP not set or unreachable. Please check device settings.',
+          );
+        }
+      }
+
+      if (!mounted) return;
+
+      // Show success message with details
+      final updateTargets = <String>[];
+      if (localUpdated) updateTargets.add('device');
+      if (serverUpdated) updateTargets.add('server');
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Configuration updated successfully. ${_changedFields.length} parameter(s) changed.',
+            'Configuration updated on ${updateTargets.join(' and ')}. ${_changedFields.length} parameter(s) changed.',
           ),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 2),
