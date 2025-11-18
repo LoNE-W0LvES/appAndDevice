@@ -809,51 +809,19 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
         return;
     }
 
-    // ✅ SERVER RULE 3: Value changed → Last-Write-Wins
-    if (incomingConfig.lastModified > deviceConfig.lastModified) {
-        Serial.println("[WebServer] Incoming timestamp newer - accepting update");
-        deviceConfig = incomingConfig;
+    // ✅ No other paths: Config must have priority flag (lastModified=0)
+    // The app always sends config with priority flag for local updates
+    // Per-field LWW is too complex for config (unlike control data)
+    Serial.println("[WebServer] Config update rejected - no priority flag");
 
-        // Mark as locally modified (sets device_config_sync_status = false)
-        if (apiClient != nullptr) {
-            apiClient->markConfigModified();
-        }
+    StaticJsonDocument<512> responseDoc;
+    responseDoc["success"] = false;
+    responseDoc["error"] = "PRIORITY_REQUIRED";
+    responseDoc["message"] = "Config updates require priority flag (lastModified=0)";
 
-        // Trigger immediate sync callback
-        if (configSyncCallback != nullptr) {
-            Serial.println("[WebServer] Triggering immediate config sync...");
-            configSyncCallback();
-        }
-
-        Serial.println("[WebServer] Config updated from app (LWW)");
-        Serial.println("  Upper Threshold: " + String(deviceConfig.upperThreshold));
-        Serial.println("  Lower Threshold: " + String(deviceConfig.lowerThreshold));
-
-        // Send success response immediately (don't block on server sync)
-        // The heartbeat will handle syncing to server asynchronously
-        StaticJsonDocument<512> responseDoc;
-        responseDoc["success"] = true;
-        responseDoc["timestamp"] = deviceConfig.lastModified;
-        responseDoc["message"] = "Config updated (will sync to server on next heartbeat)";
-
-        String response;
-        serializeJson(responseDoc, response);
-        request->send(200, "application/json", response);
-    } else {
-        Serial.println("[WebServer] Current timestamp newer - rejecting update");
-
-        // Send rejection response
-        StaticJsonDocument<512> responseDoc;
-        responseDoc["success"] = false;
-        responseDoc["error"] = "STALE_TIMESTAMP";
-        responseDoc["message"] = "Current config is newer";
-        responseDoc["timestamp"] = deviceConfig.lastModified;
-
-        String response;
-        serializeJson(responseDoc, response);
-        request->send(409, "application/json", response);  // 409 Conflict
-    }
-
+    String response;
+    serializeJson(responseDoc, response);
+    request->send(400, "application/json", response);
     jsonBuffer = "";
 }
 
