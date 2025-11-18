@@ -498,11 +498,15 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                       onTap: widget.device.deviceConfig.isEmpty
                           ? null
                           : () async {
+                              // Get the latest device from provider before opening edit screen
+                              final deviceProvider = context.read<DeviceProvider>();
+                              final currentDevice = deviceProvider.selectedDevice ?? widget.device;
+
                               final result = await Navigator.push<bool>(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => DeviceConfigEditScreen(
-                                    device: widget.device,
+                                    device: currentDevice,
                                   ),
                                 ),
                               );
