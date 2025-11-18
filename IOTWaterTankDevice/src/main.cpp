@@ -417,8 +417,9 @@ bool connectToBackend() {
 void uploadTelemetryTask(void* parameter) {
     Serial.println("[AsyncTask] Telemetry upload started");
 
-    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
-        Serial.println("[AsyncTask] Cannot upload telemetry - not connected");
+    // Don't attempt server calls in AP mode (no internet) or when not authenticated
+    if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
+        Serial.println("[AsyncTask] Cannot upload telemetry - not in client mode or not authenticated");
         telemetryTaskHandle = NULL;
         vTaskDelete(NULL);
         return;
@@ -445,8 +446,9 @@ void uploadTelemetryTask(void* parameter) {
 void fetchControlDataTask(void* parameter) {
     Serial.println("[AsyncTask] Control fetch started");
 
-    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
-        Serial.println("[AsyncTask] Cannot fetch control - not connected");
+    // Don't attempt server calls in AP mode (no internet) or when not authenticated
+    if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
+        Serial.println("[AsyncTask] Cannot fetch control - not in client mode or not authenticated");
         controlTaskHandle = NULL;
         vTaskDelete(NULL);
         return;
@@ -540,7 +542,9 @@ void fetchControlDataTask(void* parameter) {
 void fetchConfigFromServerTask(void* parameter) {
     Serial.println("[AsyncTask] Config fetch started");
 
-    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
+    // Don't attempt server calls in AP mode (no internet) or when not authenticated
+    if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
+        Serial.println("[AsyncTask] Cannot fetch config - not in client mode or not authenticated");
         configFetchTaskHandle = NULL;
         vTaskDelete(NULL);
         return;
@@ -637,7 +641,9 @@ void fetchConfigFromServerTask(void* parameter) {
 void syncConfigToServerTask(void* parameter) {
     Serial.println("[AsyncTask] Config sync started");
 
-    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
+    // Don't attempt server calls in AP mode (no internet) or when not authenticated
+    if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
+        Serial.println("[AsyncTask] Cannot sync config - not in client mode or not authenticated");
         configSyncTaskHandle = NULL;
         vTaskDelete(NULL);
         return;
@@ -778,8 +784,9 @@ void fetchControlData() {
  * Check for OTA firmware updates (every 5 minutes)
  */
 void checkOTAUpdate() {
-    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
-        Serial.println("[Main] Cannot check OTA - not connected");
+    // Don't attempt OTA checks in AP mode (no internet)
+    if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
+        Serial.println("[Main] Cannot check OTA - not in client mode or not authenticated");
         return;
     }
 
@@ -1051,8 +1058,9 @@ void loop() {
         updateDisplay();
     }
 
-    // Only perform backend operations if connected and initialized
-    if (systemInitialized && isWiFiConnected()) {
+    // Only perform backend operations if connected, initialized, and in client mode
+    // IMPORTANT: Don't attempt server calls in AP mode (no internet, only for WiFi provisioning)
+    if (systemInitialized && isWiFiConnected() && getWiFiMode() == WIFI_CLIENT_MODE) {
 
         // Upload telemetry (every 30 seconds)
         if (currentTime - lastTelemetryUpload >= TELEMETRY_UPLOAD_INTERVAL) {
