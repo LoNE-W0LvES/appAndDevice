@@ -28,6 +28,7 @@ void WebServer::begin(const String& devId, APIClient* apiCli) {
     Serial.println("  GET  /" + deviceId + "/config         - Get device configuration");
     Serial.println("  POST /" + deviceId + "/config         - Update device configuration from app");
     Serial.println("  GET  /" + deviceId + "/timestamp      - Get device timestamp and sync status");
+    Serial.println("  POST /" + deviceId + "/timestamp      - Sync device time from app (auto-detects seconds/millis)");
     Serial.println("  GET  /" + deviceId + "/status         - Provisioning status");
     Serial.println("  GET  /" + deviceId + "/scanWifi       - Scan WiFi networks");
     Serial.println("  POST /" + deviceId + "/save           - Save WiFi credentials");
@@ -940,6 +941,19 @@ void WebServer::handlePostTimestamp(AsyncWebServerRequest* request, uint8_t* dat
         request->send(400, "application/json", "{\"success\":false,\"error\":\"INVALID_TIMESTAMP\"}");
         jsonBuffer = "";
         return;
+    }
+
+    // Auto-detect if timestamp is in seconds or milliseconds
+    // Unix time in seconds: ~10 digits (e.g., 1763445130 for year 2025)
+    // Unix time in milliseconds: ~13 digits (e.g., 1763445130002 for year 2025)
+    // Threshold: 10000000000 (10 billion) = Sep 2286 in seconds
+    if (newTimestamp < 10000000000ULL) {
+        // Timestamp is in seconds - convert to milliseconds
+        Serial.println("[WebServer] Detected timestamp in seconds: " + String((unsigned long)newTimestamp));
+        newTimestamp = newTimestamp * 1000;
+        Serial.println("[WebServer] Converted to milliseconds: " + String((unsigned long)newTimestamp));
+    } else {
+        Serial.println("[WebServer] Detected timestamp in milliseconds: " + String((unsigned long)newTimestamp));
     }
 
     // Set the timestamp via API client
