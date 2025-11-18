@@ -469,7 +469,13 @@ void fetchControlData() {
         if (controlData.config_update) {
             Serial.println("[Main] Config update requested, re-fetching configuration...");
 
+            // Store previous config to detect changes
+            DeviceConfig previousConfig = deviceConfig;
+
             if (apiClient.fetchAndApplyServerConfig(deviceConfig)) {
+                // Check if values actually changed during merge
+                bool valuesChanged = deviceConfig.valuesChanged(previousConfig);
+
                 // Check if merged values differ from server values
                 if (configHandler.valuesDifferFromAPI()) {
                     Serial.println("[Main] Merged values differ from server - syncing back to server...");
@@ -477,33 +483,40 @@ void fetchControlData() {
                     syncConfigToServer();
                 }
 
-                // Apply new configuration
-                sensorManager.setTankConfig(
-                    deviceConfig.tankHeight,
-                    deviceConfig.tankWidth,
-                    deviceConfig.tankShape
-                );
+                // Only apply and save if values actually changed
+                if (valuesChanged) {
+                    Serial.println("[Main] Config values changed - applying and saving...");
 
-                displayManager.setTankSettings(
-                    deviceConfig.tankHeight,
-                    deviceConfig.tankWidth,
-                    deviceConfig.tankShape,
-                    deviceConfig.upperThreshold,
-                    deviceConfig.lowerThreshold
-                );
+                    // Apply new configuration
+                    sensorManager.setTankConfig(
+                        deviceConfig.tankHeight,
+                        deviceConfig.tankWidth,
+                        deviceConfig.tankShape
+                    );
 
-                webServer.updateDeviceConfig(deviceConfig);
+                    displayManager.setTankSettings(
+                        deviceConfig.tankHeight,
+                        deviceConfig.tankWidth,
+                        deviceConfig.tankShape,
+                        deviceConfig.upperThreshold,
+                        deviceConfig.lowerThreshold
+                    );
 
-                // Save config to NVS for persistence across reboots
-                storageManager.saveDeviceConfig(
-                    deviceConfig.upperThreshold,
-                    deviceConfig.lowerThreshold,
-                    deviceConfig.tankHeight,
-                    deviceConfig.tankWidth,
-                    deviceConfig.tankShape
-                );
+                    webServer.updateDeviceConfig(deviceConfig);
 
-                Serial.println("[Main] Configuration updated successfully");
+                    // Save config to NVS for persistence across reboots
+                    storageManager.saveDeviceConfig(
+                        deviceConfig.upperThreshold,
+                        deviceConfig.lowerThreshold,
+                        deviceConfig.tankHeight,
+                        deviceConfig.tankWidth,
+                        deviceConfig.tankShape
+                    );
+
+                    Serial.println("[Main] Configuration updated successfully");
+                } else {
+                    Serial.println("[Main] Config fetched but values unchanged - skipping save");
+                }
             }
         }
     } else {
@@ -606,8 +619,14 @@ void fetchConfigFromServer() {
 
     Serial.println("[Main] Fetching config from server...");
 
+    // Store previous config to detect changes
+    DeviceConfig previousConfig = deviceConfig;
+
     // Fetch latest config from server
     if (apiClient.fetchAndApplyServerConfig(deviceConfig)) {
+        // Check if values actually changed during merge
+        bool valuesChanged = deviceConfig.valuesChanged(previousConfig);
+
         // Check if merged values differ from server values (API values)
         // This happens when local/device values won the 3-way merge
         if (configHandler.valuesDifferFromAPI()) {
@@ -622,36 +641,43 @@ void fetchConfigFromServer() {
             Serial.println("[Main] Merged values match server values - no sync needed");
         }
 
-        // Update last synced config (oldData = newData)
-        lastSyncedConfig = deviceConfig;
+        // Only apply and save if values actually changed
+        if (valuesChanged) {
+            Serial.println("[Main] Config values changed - applying and saving...");
 
-        // Apply new configuration
-        sensorManager.setTankConfig(
-            deviceConfig.tankHeight,
-            deviceConfig.tankWidth,
-            deviceConfig.tankShape
-        );
+            // Update last synced config (oldData = newData)
+            lastSyncedConfig = deviceConfig;
 
-        displayManager.setTankSettings(
-            deviceConfig.tankHeight,
-            deviceConfig.tankWidth,
-            deviceConfig.tankShape,
-            deviceConfig.upperThreshold,
-            deviceConfig.lowerThreshold
-        );
+            // Apply new configuration
+            sensorManager.setTankConfig(
+                deviceConfig.tankHeight,
+                deviceConfig.tankWidth,
+                deviceConfig.tankShape
+            );
 
-        webServer.updateDeviceConfig(deviceConfig);
+            displayManager.setTankSettings(
+                deviceConfig.tankHeight,
+                deviceConfig.tankWidth,
+                deviceConfig.tankShape,
+                deviceConfig.upperThreshold,
+                deviceConfig.lowerThreshold
+            );
 
-        // Save config to NVS for persistence across reboots
-        storageManager.saveDeviceConfig(
-            deviceConfig.upperThreshold,
-            deviceConfig.lowerThreshold,
-            deviceConfig.tankHeight,
-            deviceConfig.tankWidth,
-            deviceConfig.tankShape
-        );
+            webServer.updateDeviceConfig(deviceConfig);
 
-        Serial.println("[Main] Config fetched and applied from server");
+            // Save config to NVS for persistence across reboots
+            storageManager.saveDeviceConfig(
+                deviceConfig.upperThreshold,
+                deviceConfig.lowerThreshold,
+                deviceConfig.tankHeight,
+                deviceConfig.tankWidth,
+                deviceConfig.tankShape
+            );
+
+            Serial.println("[Main] Config fetched and applied from server");
+        } else {
+            Serial.println("[Main] Config fetched but values unchanged - skipping save");
+        }
     } else {
         Serial.println("[Main] Failed to fetch config from server");
     }
