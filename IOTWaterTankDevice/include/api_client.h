@@ -82,6 +82,9 @@ public:
     // Fetch control data from server
     bool fetchControl(ControlData& control);
 
+    // Upload control data to server (with priority flag)
+    bool uploadControl(const ControlData& control);
+
     // Upload telemetry data to server
     // Automatically includes Status field (always 1 for online tracking)
     // Server marks device offline if no telemetry for >60 seconds

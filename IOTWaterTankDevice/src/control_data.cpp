@@ -35,6 +35,31 @@ bool ControlDataManager::fetchControl(ControlData& control) {
     return parseControl(response, control);
 }
 
+bool ControlDataManager::uploadControl(const ControlData& control) {
+    // Build payload with priority flag (lastModified=0) for all fields
+    // This ensures device changes always override server values
+    StaticJsonDocument<512> doc;
+
+    JsonObject pumpSwitch = doc.createNestedObject("pumpSwitch");
+    pumpSwitch["value"] = control.pumpSwitch;
+    pumpSwitch["lastModified"] = 0;  // Priority flag
+
+    JsonObject configUpdate = doc.createNestedObject("config_update");
+    configUpdate["value"] = control.config_update;
+    configUpdate["lastModified"] = 0;  // Priority flag
+
+    String payload;
+    serializeJson(doc, payload);
+
+    DEBUG_PRINTLN("[ControlData] Uploading control data:");
+    DEBUG_PRINTLN(payload);
+
+    String url = String(API_DEVICE_CONTROL) + "?deviceId=" + String(DEVICE_ID);
+    String response;
+
+    return httpRequest("POST", url, payload, response);
+}
+
 // ============================================================================
 // HELPER METHODS
 // ============================================================================

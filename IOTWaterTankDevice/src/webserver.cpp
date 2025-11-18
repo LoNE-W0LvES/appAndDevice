@@ -449,10 +449,20 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
             pumpCallback(controlData.pumpSwitch);
         }
 
+        // Immediately sync control data to server (if authenticated)
+        if (apiClient != nullptr && apiClient->isAuthenticated()) {
+            Serial.println("[WebServer] Uploading control data to server...");
+            if (apiClient->uploadControl(controlData)) {
+                Serial.println("[WebServer] Control data synced to server successfully");
+            } else {
+                Serial.println("[WebServer] WARNING: Failed to sync control data to server");
+            }
+        }
+
         // Send success response immediately
         StaticJsonDocument<512> responseDoc;
         responseDoc["success"] = true;
-        responseDoc["message"] = "Control updated (will sync to server on next heartbeat)";
+        responseDoc["message"] = "Control updated and synced to server";
 
         String response;
         serializeJson(responseDoc, response);
@@ -505,10 +515,20 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
             pumpCallback(controlData.pumpSwitch);
         }
 
+        // Immediately sync control data to server (if authenticated)
+        if (apiClient != nullptr && apiClient->isAuthenticated()) {
+            Serial.println("[WebServer] Uploading control data to server...");
+            if (apiClient->uploadControl(controlData)) {
+                Serial.println("[WebServer] Control data synced to server successfully");
+            } else {
+                Serial.println("[WebServer] WARNING: Failed to sync control data to server");
+            }
+        }
+
         // Send success response
         StaticJsonDocument<512> responseDoc;
         responseDoc["success"] = true;
-        responseDoc["message"] = "Control updated (will sync to server on next heartbeat)";
+        responseDoc["message"] = "Control updated and synced to server";
 
         String response;
         serializeJson(responseDoc, response);

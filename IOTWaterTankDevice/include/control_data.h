@@ -53,6 +53,9 @@ public:
     // Fetch control data from server
     bool fetchControl(ControlData& control);
 
+    // Upload control data to server (with priority flag)
+    bool uploadControl(const ControlData& control);
+
 private:
     String deviceToken;
     String hardwareId;

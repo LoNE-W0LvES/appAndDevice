@@ -523,6 +523,16 @@ bool APIClient::fetchControl(ControlData& control) {
     return result;
 }
 
+bool APIClient::uploadControl(const ControlData& control) {
+    if (!authenticated) {
+        Serial.println("[API] Not authenticated, cannot upload control");
+        return false;
+    }
+
+    // Delegate to control data manager
+    return controlDataManager.uploadControl(control);
+}
+
 bool APIClient::uploadTelemetry(float waterLevel, float currInflow, int pumpStatus) {
     if (!authenticated) {
         Serial.println("[API] Not authenticated, cannot upload telemetry");
