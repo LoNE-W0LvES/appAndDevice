@@ -453,36 +453,36 @@ void uploadTelemetryTask(void* parameter) {
  * Async task: Upload control data to backend
  * Runs in background to prevent blocking main loop during network delays
  * Called immediately when local webserver receives control update from app
+ *
+ * @param parameter Pointer to heap-allocated String containing pre-built JSON payload
  */
 void uploadControlTask(void* parameter) {
     Serial.println("[AsyncTask] Control upload started");
     activeServerTasks++;  // Increment active task counter
 
-    // Extract the captured ControlData from parameter
-    ControlData* capturedData = (ControlData*)parameter;
+    // Extract the pre-built JSON payload from parameter
+    String* jsonPayload = (String*)parameter;
 
     // Don't attempt server calls in AP mode (no internet) or when not authenticated
     if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
         Serial.println("[AsyncTask] Cannot upload control - not in client mode or not authenticated");
-        delete capturedData;  // Free allocated memory before exit
+        delete jsonPayload;  // Free allocated memory before exit
         activeServerTasks--;  // Decrement before exit
         controlUploadTaskHandle = NULL;
         vTaskDelete(NULL);
         return;
     }
 
-    // Use the captured data (no need for mutex - we have our own copy)
-    // This prevents race conditions between callback trigger and task execution
-    if (apiClient.uploadControl(*capturedData)) {
+    // Upload using the pre-built JSON payload
+    // No race condition because JSON was built synchronously when callback was triggered
+    if (apiClient.uploadControlWithPayload(*jsonPayload)) {
         Serial.println("[AsyncTask] Control data uploaded to server successfully");
-        Serial.printf("[AsyncTask] Uploaded pumpSwitch=%d, ts=%llu\n",
-                     capturedData->pumpSwitch, capturedData->pumpSwitchLastModified);
     } else {
         Serial.println("[AsyncTask] Failed to upload control data to server");
     }
 
     // Free the allocated memory
-    delete capturedData;
+    delete jsonPayload;
 
     activeServerTasks--;  // Decrement after completion
     controlUploadTaskHandle = NULL;
@@ -824,6 +824,9 @@ void uploadTelemetry() {
  * Upload control data to backend (called immediately when app updates control)
  * Launches async task to prevent blocking main loop
  * Ensures remote users see updates quickly (not waiting for 5-minute cycle)
+ *
+ * IMPORTANT: JSON payload is built SYNCHRONOUSLY (with mutex) before creating task
+ * This prevents race conditions - the JSON captures exact values at callback time
  */
 void uploadControlData() {
     // Skip if task is already running
@@ -839,33 +842,34 @@ void uploadControlData() {
         return;
     }
 
-    // Capture current controlData values with mutex protection
-    // This prevents race conditions - we pass a snapshot to the task
-    ControlData* capturedData = new ControlData();
+    // Build JSON payload SYNCHRONOUSLY with mutex protection
+    // This captures exact values at the moment callback is triggered
+    String* jsonPayload = new String();
     if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
-        *capturedData = controlData;  // Copy current values
+        // Build JSON from current controlData values
+        *jsonPayload = apiClient.buildControlPayload(controlData);
         xSemaphoreGive(configMutex);
-        Serial.printf("[Main] Captured control for upload: pumpSwitch=%d, ts=%llu\n",
-                     capturedData->pumpSwitch, capturedData->pumpSwitchLastModified);
+        Serial.println("[Main] Built JSON payload for async upload");
+        Serial.println(*jsonPayload);
     } else {
-        Serial.println("[Main] Failed to capture controlData, aborting upload");
-        delete capturedData;
+        Serial.println("[Main] Failed to acquire mutex for JSON construction, aborting upload");
+        delete jsonPayload;
         return;
     }
 
-    // Create async task for control upload with captured data
+    // Create async task for control upload with pre-built JSON
     BaseType_t result = xTaskCreate(
         uploadControlTask,       // Task function
         "ControlUpload",         // Task name
         4096,                    // Stack size (bytes)
-        capturedData,            // Task parameters (captured snapshot)
+        jsonPayload,             // Task parameters (pre-built JSON string)
         1,                       // Priority (1 = low, higher than idle)
         &controlUploadTaskHandle // Task handle
     );
 
     if (result != pdPASS) {
         Serial.println("[Main] Failed to create control upload task");
-        delete capturedData;  // Free memory if task creation failed
+        delete jsonPayload;  // Free memory if task creation failed
         controlUploadTaskHandle = NULL;
     }
 }

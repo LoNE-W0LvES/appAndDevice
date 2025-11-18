@@ -85,6 +85,12 @@ public:
     // Upload control data to server (with priority flag)
     bool uploadControl(const ControlData& control);
 
+    // Upload control data using pre-built JSON payload (for async operations)
+    bool uploadControlWithPayload(const String& payload);
+
+    // Build JSON payload for control upload (used for async operations)
+    String buildControlPayload(const ControlData& control);
+
     // Upload telemetry data to server
     // Automatically includes Status field (always 1 for online tracking)
     // Server marks device offline if no telemetry for >60 seconds

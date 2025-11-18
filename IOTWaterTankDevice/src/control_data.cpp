@@ -35,7 +35,7 @@ bool ControlDataManager::fetchControl(ControlData& control) {
     return parseControl(response, control);
 }
 
-bool ControlDataManager::uploadControl(const ControlData& control) {
+String ControlDataManager::buildControlPayload(const ControlData& control) {
     // Build payload with priority flag (lastModified=0) for all fields
     // This ensures device changes always override server values
     // Server expects full structure with key, label, type, value, lastModified
@@ -60,6 +60,10 @@ bool ControlDataManager::uploadControl(const ControlData& control) {
     String payload;
     serializeJson(doc, payload);
 
+    return payload;
+}
+
+bool ControlDataManager::uploadControlWithPayload(const String& payload) {
     DEBUG_PRINTLN("[ControlData] Uploading control data:");
     DEBUG_PRINTLN(payload);
 
@@ -67,6 +71,12 @@ bool ControlDataManager::uploadControl(const ControlData& control) {
     String response;
 
     return httpRequest("POST", url, payload, response);
+}
+
+bool ControlDataManager::uploadControl(const ControlData& control) {
+    // Build JSON payload and upload
+    String payload = buildControlPayload(control);
+    return uploadControlWithPayload(payload);
 }
 
 // ============================================================================

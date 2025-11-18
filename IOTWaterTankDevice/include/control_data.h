@@ -56,6 +56,12 @@ public:
     // Upload control data to server (with priority flag)
     bool uploadControl(const ControlData& control);
 
+    // Build JSON payload for control upload (used for async operations)
+    String buildControlPayload(const ControlData& control);
+
+    // Upload control data using pre-built JSON payload
+    bool uploadControlWithPayload(const String& payload);
+
 private:
     String deviceToken;
     String hardwareId;
