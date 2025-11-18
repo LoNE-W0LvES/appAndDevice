@@ -355,11 +355,14 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
     // Extract incoming control values and timestamps
     ControlData incomingControl = controlData;  // Start with current values
     bool hasPriorityFlag = false;
-    bool hasPumpSwitchChange = false;
-    bool hasConfigUpdateChange = false;
+    bool hasPumpSwitchInRequest = false;  // Track if pumpSwitch field was sent
+    bool hasConfigUpdateInRequest = false;  // Track if config_update field was sent
+    bool pumpValueChanged = false;
+    bool configValueChanged = false;
 
     // Parse pumpSwitch field
     if (doc.containsKey("pumpSwitch")) {
+        hasPumpSwitchInRequest = true;  // Field was sent in request
         bool newPumpSwitch = doc["pumpSwitch"]["value"] | controlData.pumpSwitch;
         uint64_t pumpTs = doc["pumpSwitch"]["lastModified"] | (uint64_t)0;
 
@@ -369,12 +372,13 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
         incomingControl.pumpSwitchLastModified = pumpTs;
 
         if (newPumpSwitch != controlData.pumpSwitch) {
-            hasPumpSwitchChange = true;
+            pumpValueChanged = true;
         }
     }
 
     // Parse config_update field
     if (doc.containsKey("config_update")) {
+        hasConfigUpdateInRequest = true;  // Field was sent in request
         bool newConfigUpdate = doc["config_update"]["value"] | controlData.config_update;
         uint64_t configTs = doc["config_update"]["lastModified"] | (uint64_t)0;
 
@@ -384,17 +388,24 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
         incomingControl.configUpdateLastModified = configTs;
 
         if (newConfigUpdate != controlData.config_update) {
-            hasConfigUpdateChange = true;
+            configValueChanged = true;
         }
     }
 
-    // ✅ SERVER RULE 2: Value unchanged → Skip update
-    if (!hasPumpSwitchChange && !hasConfigUpdateChange) {
-        Serial.println("[WebServer] Control values identical - skipping update");
+    // ✅ SERVER RULE 2: Value unchanged → Skip update (but still trigger pump callback!)
+    if (!pumpValueChanged && !configValueChanged) {
+        Serial.println("[WebServer] Control values identical - updating timestamps only");
+
+        // Even if values are identical, trigger pump callback if app sent pump command
+        // This ensures pump is physically controlled even if value didn't change
+        if (hasPumpSwitchInRequest && pumpCallback != nullptr) {
+            Serial.println("[WebServer] Triggering pump callback (value unchanged, app command received)");
+            pumpCallback(incomingControl.pumpSwitch);
+        }
 
         StaticJsonDocument<512> responseDoc;
         responseDoc["success"] = true;
-        responseDoc["message"] = "No changes - values identical";
+        responseDoc["message"] = "Values identical - callback triggered";
 
         String response;
         serializeJson(responseDoc, response);
@@ -407,23 +418,21 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
     if (hasPriorityFlag) {
         Serial.println("[WebServer] Priority flag detected - accepting app control");
 
-        bool pumpStateChanged = (incomingControl.pumpSwitch != controlData.pumpSwitch);
-
         controlData = incomingControl;
 
         // Assign new timestamp
         if (apiClient != nullptr) {
-            if (hasPumpSwitchChange) {
+            if (hasPumpSwitchInRequest) {
                 controlData.pumpSwitchLastModified = apiClient->getCurrentTimestamp();
             }
-            if (hasConfigUpdateChange) {
+            if (hasConfigUpdateInRequest) {
                 controlData.configUpdateLastModified = apiClient->getCurrentTimestamp();
             }
         } else {
-            if (hasPumpSwitchChange) {
+            if (hasPumpSwitchInRequest) {
                 controlData.pumpSwitchLastModified = millis();
             }
-            if (hasConfigUpdateChange) {
+            if (hasConfigUpdateInRequest) {
                 controlData.configUpdateLastModified = millis();
             }
         }
@@ -433,10 +442,10 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
         Serial.println("  Config Update: " + String(controlData.config_update));
 
         // ALWAYS trigger pump callback when app sends pump command (even if value unchanged)
-        // This ensures the pump is physically controlled even if a previous update failed
-        if (hasPumpSwitchChange && pumpCallback != nullptr) {
-            Serial.println("[WebServer] Triggering pump control callback (value " +
-                         String(pumpStateChanged ? "changed" : "unchanged") + ")");
+        // This ensures pump is physically controlled even if value didn't change
+        if (hasPumpSwitchInRequest && pumpCallback != nullptr) {
+            Serial.println("[WebServer] Triggering pump callback (value " +
+                         String(pumpValueChanged ? "changed" : "unchanged") + ")");
             pumpCallback(controlData.pumpSwitch);
         }
 
@@ -454,15 +463,12 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
 
     // ✅ SERVER RULE 3: Value changed → Last-Write-Wins (per field)
     bool acceptedUpdate = false;
-    bool pumpStateChanged = false;
     bool pumpUpdateAccepted = false;
 
     // Check pumpSwitch timestamp
-    if (hasPumpSwitchChange) {
+    if (hasPumpSwitchInRequest) {
         if (incomingControl.pumpSwitchLastModified > controlData.pumpSwitchLastModified) {
             Serial.println("[WebServer] Pump switch timestamp newer - accepting update");
-
-            pumpStateChanged = (incomingControl.pumpSwitch != controlData.pumpSwitch);
 
             controlData.pumpSwitch = incomingControl.pumpSwitch;
             controlData.pumpSwitchLastModified = incomingControl.pumpSwitchLastModified;
@@ -474,7 +480,7 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
     }
 
     // Check config_update timestamp
-    if (hasConfigUpdateChange) {
+    if (hasConfigUpdateInRequest) {
         if (incomingControl.configUpdateLastModified > controlData.configUpdateLastModified) {
             Serial.println("[WebServer] Config update timestamp newer - accepting update");
 
@@ -495,7 +501,7 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
         // This ensures the pump is physically controlled even if a previous update failed
         if (pumpUpdateAccepted && pumpCallback != nullptr) {
             Serial.println("[WebServer] Triggering pump control callback (value " +
-                         String(pumpStateChanged ? "changed" : "unchanged") + ")");
+                         String(pumpValueChanged ? "changed" : "unchanged") + ")");
             pumpCallback(controlData.pumpSwitch);
         }
 
