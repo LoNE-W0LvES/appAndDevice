@@ -29,9 +29,9 @@ class OfflineDeviceService {
 
     // Create a separate Dio instance for local connections
     _localDio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 3),
-      receiveTimeout: const Duration(seconds: 5),
-      sendTimeout: const Duration(seconds: 5),
+      connectTimeout: const Duration(seconds: 10),  // Increased for ESP32 processing time
+      receiveTimeout: const Duration(seconds: 10),
+      sendTimeout: const Duration(seconds: 10),
       validateStatus: (status) => status! < 500,
     ));
   }
@@ -185,10 +185,18 @@ class OfflineDeviceService {
     final configUrl = 'http://$localIp/$deviceId/config';
 
     try {
-      // Fetch all three endpoints
+      // Fetch all three endpoints with detailed error logging
+      AppConfig.offlineLog('   📡 Fetching /telemetry...');
       final telemetryResponse = await _localDio!.get(telemetryUrl);
+      AppConfig.offlineLog('   ✅ /telemetry OK (${telemetryResponse.statusCode})');
+
+      AppConfig.offlineLog('   📡 Fetching /control...');
       final controlResponse = await _localDio!.get(controlUrl);
+      AppConfig.offlineLog('   ✅ /control OK (${controlResponse.statusCode})');
+
+      AppConfig.offlineLog('   📡 Fetching /config...');
       final configResponse = await _localDio!.get(configUrl);
+      AppConfig.offlineLog('   ✅ /config OK (${configResponse.statusCode})');
 
       if (telemetryResponse.statusCode == 200 &&
           controlResponse.statusCode == 200 &&

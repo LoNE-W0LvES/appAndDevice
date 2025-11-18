@@ -23,7 +23,7 @@ import 'offline_mode_service.dart';
 /// This ensures device time stays accurate even without internet, using
 /// the phone's cellular-synced clock as a reliable fallback.
 class TimestampService {
-  static const Duration _timeout = Duration(seconds: 5);
+  static const Duration _timeout = Duration(seconds: 10);  // Increased for ESP32 processing time
   static const int _maxDriftMs = 2000; // 2 seconds max acceptable drift (user requirement)
   final ApiClient _apiClient = ApiClient();
   final OfflineModeService _offlineModeService = OfflineModeService();
