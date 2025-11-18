@@ -458,24 +458,31 @@ void uploadControlTask(void* parameter) {
     Serial.println("[AsyncTask] Control upload started");
     activeServerTasks++;  // Increment active task counter
 
+    // Extract the captured ControlData from parameter
+    ControlData* capturedData = (ControlData*)parameter;
+
     // Don't attempt server calls in AP mode (no internet) or when not authenticated
     if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
         Serial.println("[AsyncTask] Cannot upload control - not in client mode or not authenticated");
+        delete capturedData;  // Free allocated memory before exit
         activeServerTasks--;  // Decrement before exit
         controlUploadTaskHandle = NULL;
         vTaskDelete(NULL);
         return;
     }
 
-    // Take mutex before accessing controlData
-    if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
-        if (apiClient.uploadControl(controlData)) {
-            Serial.println("[AsyncTask] Control data uploaded to server successfully");
-        } else {
-            Serial.println("[AsyncTask] Failed to upload control data to server");
-        }
-        xSemaphoreGive(configMutex);
+    // Use the captured data (no need for mutex - we have our own copy)
+    // This prevents race conditions between callback trigger and task execution
+    if (apiClient.uploadControl(*capturedData)) {
+        Serial.println("[AsyncTask] Control data uploaded to server successfully");
+        Serial.printf("[AsyncTask] Uploaded pumpSwitch=%d, ts=%llu\n",
+                     capturedData->pumpSwitch, capturedData->pumpSwitchLastModified);
+    } else {
+        Serial.println("[AsyncTask] Failed to upload control data to server");
     }
+
+    // Free the allocated memory
+    delete capturedData;
 
     activeServerTasks--;  // Decrement after completion
     controlUploadTaskHandle = NULL;
@@ -832,18 +839,33 @@ void uploadControlData() {
         return;
     }
 
-    // Create async task for control upload
+    // Capture current controlData values with mutex protection
+    // This prevents race conditions - we pass a snapshot to the task
+    ControlData* capturedData = new ControlData();
+    if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
+        *capturedData = controlData;  // Copy current values
+        xSemaphoreGive(configMutex);
+        Serial.printf("[Main] Captured control for upload: pumpSwitch=%d, ts=%llu\n",
+                     capturedData->pumpSwitch, capturedData->pumpSwitchLastModified);
+    } else {
+        Serial.println("[Main] Failed to capture controlData, aborting upload");
+        delete capturedData;
+        return;
+    }
+
+    // Create async task for control upload with captured data
     BaseType_t result = xTaskCreate(
         uploadControlTask,       // Task function
         "ControlUpload",         // Task name
         4096,                    // Stack size (bytes)
-        NULL,                    // Task parameters
+        capturedData,            // Task parameters (captured snapshot)
         1,                       // Priority (1 = low, higher than idle)
         &controlUploadTaskHandle // Task handle
     );
 
     if (result != pdPASS) {
         Serial.println("[Main] Failed to create control upload task");
+        delete capturedData;  // Free memory if task creation failed
         controlUploadTaskHandle = NULL;
     }
 }
