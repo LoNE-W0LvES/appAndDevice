@@ -111,24 +111,27 @@ class OfflineDeviceService {
     // Try local connection first if IP is available
     if (localIp != null && localIp.isNotEmpty) {
       try {
-        AppConfig.offlineLog('Attempting to fetch live data from local IP: $localIp');
+        AppConfig.offlineLog('⚡ Fetching LIVE telemetry from: http://$localIp/$deviceId');
         final localDevice = await _getDeviceFromLocal(deviceId, localIp);
 
         // Use the fresh config from the device and update cache
         await _cacheDeviceData(deviceId, localDevice);
         await _cacheDeviceConfig(deviceId, localDevice.deviceConfig);
 
-        AppConfig.offlineLog('Successfully fetched live data from local IP');
+        AppConfig.offlineLog('✅ FRESH data received from device:');
+        AppConfig.offlineLog('   Water Level: ${localDevice.telemetryData['waterLevel']}');
+        AppConfig.offlineLog('   Pump: ${localDevice.controlData['pumpSwitch']?['value']}');
+        AppConfig.offlineLog('   Inflow: ${localDevice.telemetryData['inflow']}');
         return localDevice;
       } catch (e) {
-        AppConfig.offlineLog('Local connection failed: $e');
+        AppConfig.errorLog('❌ FAILED to fetch from device', error: e);
 
         // In offline mode, don't fall back to server
         if (isOffline) {
-          AppConfig.offlineLog('Offline mode: Skipping server fallback');
+          AppConfig.offlineLog('⚠️  Offline mode: Skipping server fallback');
           final cachedDevice = await _getCachedDeviceData(deviceId);
           if (cachedDevice != null) {
-            AppConfig.offlineLog('Using cached live data');
+            AppConfig.offlineLog('📦 Using CACHED data (device unreachable)');
             return cachedDevice;
           }
           throw ApiException(message: 'Device not reachable and no cached data available');
@@ -141,6 +144,7 @@ class OfflineDeviceService {
     // Fall back to server (only if not in offline mode)
     if (!isOffline) {
       try {
+        AppConfig.offlineLog('🌐 Falling back to SERVER for live data');
         final response = await _apiClient.get('/api/devices/$deviceId');
         final device = Device.fromJson(response.data);
 
@@ -148,12 +152,13 @@ class OfflineDeviceService {
         await _cacheDeviceData(deviceId, device);
         await _cacheDeviceConfig(deviceId, device.deviceConfig);
 
+        AppConfig.offlineLog('✅ FRESH data received from server');
         return device;
       } catch (e) {
         // Try to return cached data if available
         final cachedDevice = await _getCachedDeviceData(deviceId);
         if (cachedDevice != null) {
-          AppConfig.offlineLog('Using cached live data (server failed)');
+          AppConfig.offlineLog('📦 Using CACHED data (server failed, device failed)');
           return cachedDevice;
         }
 
@@ -163,7 +168,7 @@ class OfflineDeviceService {
       // Offline mode with no local IP - use cached data only
       final cachedDevice = await _getCachedDeviceData(deviceId);
       if (cachedDevice != null) {
-        AppConfig.offlineLog('Offline mode: Using cached live data');
+        AppConfig.offlineLog('📦 Offline mode: Using CACHED data (no local IP)');
         return cachedDevice;
       }
       throw ApiException(message: 'No device data available in offline mode');
