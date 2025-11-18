@@ -80,18 +80,11 @@ bool DeviceConfigManager::sendConfigWithPriority(DeviceConfig& config) {
     }
 
     if (responseDoc["success"] == true) {
-        // Server accepted and assigned timestamp - update all field timestamps
-        uint64_t serverTimestamp = responseDoc["timestamp"];
-        config.upperThresholdLastModified = serverTimestamp;
-        config.lowerThresholdLastModified = serverTimestamp;
-        config.tankHeightLastModified = serverTimestamp;
-        config.tankWidthLastModified = serverTimestamp;
-        config.tankShapeLastModified = serverTimestamp;
-        config.usedTotalLastModified = serverTimestamp;
-        config.maxInflowLastModified = serverTimestamp;
-        config.forceUpdateLastModified = serverTimestamp;
-        config.ipAddressLastModified = serverTimestamp;
-        Serial.println("[DeviceConfig] Config synced TO server with priority");
+        // IMPORTANT: Do NOT modify device variables here!
+        // api_variables should ONLY be updated when receiving data FROM server
+        // After this function returns, ConnectionSyncManager will fetch back from server
+        // and THAT fetch will update the api_variables with proper timestamps
+        Serial.println("[DeviceConfig] Config sent TO server with priority successfully");
         return true;
     }
 
