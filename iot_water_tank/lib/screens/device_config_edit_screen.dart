@@ -86,26 +86,22 @@ class _DeviceConfigEditScreenState extends State<DeviceConfigEditScreen> {
     });
 
     try {
-      // Prepare only changed parameters with new timestamps
-      final changedConfig = <String, DeviceConfigParameter>{};
-      for (final key in _changedFields) {
-        changedConfig[key] = _modifiedConfig[key]!;
-      }
-
       // Log configuration being saved
       AppConfig.configLog('=== SAVING DEVICE CONFIGURATION ===');
       AppConfig.configLog('Device ID: ${widget.device.id}');
       AppConfig.configLog('Device Name: ${widget.device.name}');
       AppConfig.configLog('Changed Fields: ${_changedFields.length}');
+      AppConfig.configLog('Total Fields: ${_modifiedConfig.length}');
       AppConfig.configLog('');
-      for (final entry in changedConfig.entries) {
-        AppConfig.configLog('${entry.key}:');
-        AppConfig.configLog('  Type: ${entry.value.type}');
-        AppConfig.configLog('  Old Value: ${_originalConfig[entry.key]?.value}');
-        AppConfig.configLog('  New Value: ${entry.value.value}');
-        AppConfig.configLog('  Timestamp: ${entry.value.lastModified}');
-        if (entry.value.options != null) {
-          AppConfig.configLog('  Options: ${entry.value.options}');
+      for (final key in _changedFields) {
+        final param = _modifiedConfig[key]!;
+        AppConfig.configLog('$key:');
+        AppConfig.configLog('  Type: ${param.type}');
+        AppConfig.configLog('  Old Value: ${_originalConfig[key]?.value}');
+        AppConfig.configLog('  New Value: ${param.value}');
+        AppConfig.configLog('  Timestamp: ${param.lastModified}');
+        if (param.options != null) {
+          AppConfig.configLog('  Options: ${param.options}');
         }
         AppConfig.configLog('');
       }
@@ -124,25 +120,25 @@ class _DeviceConfigEditScreenState extends State<DeviceConfigEditScreen> {
           );
         }
 
-        // Update config via local endpoint (cache is updated internally)
+        // Send FULL config to device (not just changed fields)
+        // This ensures device always has complete configuration
         await _offlineDeviceService.updateDeviceConfig(
           widget.device.deviceId,
-          changedConfig,
+          _modifiedConfig,  // Send ALL fields
           localIp: localIp,
         );
 
         if (!mounted) return;
 
-        // Merge changed config into current device and update provider immediately
-        final updatedConfigMap = Map<String, DeviceConfigParameter>.from(widget.device.deviceConfig);
-        updatedConfigMap.addAll(changedConfig);
-        final updatedDevice = widget.device.copyWith(deviceConfig: updatedConfigMap);
+        // Update provider with full modified config
+        final updatedDevice = widget.device.copyWith(deviceConfig: _modifiedConfig);
         context.read<DeviceProvider>().setSelectedDevice(updatedDevice);
       } else {
         // Online mode: Use DeviceService (this will also set config_update = true)
+        // Send FULL config to server (not just changed fields)
         final updatedDevice = await _deviceService.updateDeviceConfig(
           widget.device.id,
-          changedConfig,
+          _modifiedConfig,  // Send ALL fields
         );
 
         if (!mounted) return;
