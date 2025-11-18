@@ -388,13 +388,23 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
     if (hasPumpSwitch) {
         pumpSwitchValue = doc["pumpSwitch"]["value"] | false;
         // If app provides timestamp, use it; otherwise use current time
-        pumpSwitchTs = doc["pumpSwitch"]["lastModified"] | currentTime;
+        // IMPORTANT: Check if lastModified field exists, don't use 0 as default!
+        if (doc["pumpSwitch"].containsKey("lastModified")) {
+            pumpSwitchTs = doc["pumpSwitch"]["lastModified"];
+        } else {
+            pumpSwitchTs = currentTime;  // Use current time if not provided
+        }
     }
 
     if (hasConfigUpdate) {
         configUpdateValue = doc["config_update"]["value"] | false;
         // If app provides timestamp, use it; otherwise use current time
-        configUpdateTs = doc["config_update"]["lastModified"] | currentTime;
+        // IMPORTANT: Check if lastModified field exists, don't use 0 as default!
+        if (doc["config_update"].containsKey("lastModified")) {
+            configUpdateTs = doc["config_update"]["lastModified"];
+        } else {
+            configUpdateTs = currentTime;  // Use current time if not provided
+        }
     }
 
     // Update handler with values from Local (app webserver)

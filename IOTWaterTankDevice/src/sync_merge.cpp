@@ -6,51 +6,59 @@
 // ============================================================================
 
 int SyncMerge::findWinner(uint64_t api_ts, uint64_t local_ts, uint64_t self_ts) {
-    // IMPORTANT: timestamp = 0 has different meanings:
-    // - For API (server): 0 = priority flag (server forcing this value)
-    // - For Local/Self: 0 = uninitialized (never been set, should lose)
+    // IMPORTANT: timestamp = 0 means "uninitialized" or "not synced" for ALL sources
+    // - API ts=0: No data from server yet (not synced)
+    // - Local ts=0: Not set by app yet (uninitialized)
+    // - Self ts=0: Not set by device yet (uninitialized)
     //
-    // Priority flag (timestamp=0) is ONLY used when SENDING to server.
-    // On device-side merge, only API timestamp=0 means priority.
+    // Last-Write-Wins: Highest non-zero timestamp wins
+    // Sources with ts=0 are excluded from comparison (uninitialized)
 
-    // If API has priority flag (timestamp=0), API always wins
-    if (api_ts == 0) {
-        DEBUG_PRINTLN("[Merge] API has priority flag (ts=0), API wins");
-        return 1;
-    }
-
-    // For Local and Self, timestamp=0 means "not set" - exclude from comparison
+    // Check which sources have valid timestamps (> 0)
+    bool api_is_set = (api_ts > 0);
     bool local_is_set = (local_ts > 0);
     bool self_is_set = (self_ts > 0);
 
     // If only one source is set, it wins by default
-    if (!local_is_set && !self_is_set) {
-        // Neither local nor self set - API wins
+    if (api_is_set && !local_is_set && !self_is_set) {
+        DEBUG_PRINTLN("[Merge] Only API set, API wins");
         return 1;
     }
-    if (!local_is_set && self_is_set) {
-        // Only self is set - compare API vs Self
-        return (self_ts > api_ts) ? 3 : 1;
+    if (!api_is_set && local_is_set && !self_is_set) {
+        DEBUG_PRINTLN("[Merge] Only Local set, Local wins");
+        return 2;
     }
-    if (local_is_set && !self_is_set) {
-        // Only local is set - compare API vs Local
-        return (local_ts > api_ts) ? 2 : 1;
+    if (!api_is_set && !local_is_set && self_is_set) {
+        DEBUG_PRINTLN("[Merge] Only Self set, Self wins");
+        return 3;
     }
 
-    // All three are set - use Last-Write-Wins (newest timestamp)
-    uint64_t newest = api_ts;
+    // If none are set, API wins by default (fallback)
+    if (!api_is_set && !local_is_set && !self_is_set) {
+        DEBUG_PRINTLN("[Merge] None set, API wins by default");
+        return 1;
+    }
+
+    // Two or more sources are set - use Last-Write-Wins (newest timestamp)
+    uint64_t newest = 0;
     int winner = 1;
 
-    if (local_ts > newest) {
+    if (api_is_set && api_ts > newest) {
+        newest = api_ts;
+        winner = 1;
+    }
+
+    if (local_is_set && local_ts > newest) {
         newest = local_ts;
         winner = 2;
     }
 
-    if (self_ts > newest) {
+    if (self_is_set && self_ts > newest) {
         newest = self_ts;
         winner = 3;
     }
 
+    DEBUG_PRINTF("[Merge] Last-Write-Wins: winner=%d, newest_ts=%llu\n", winner, newest);
     return winner;
 }
 
