@@ -430,15 +430,10 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
         Serial.println("  Merge result: Values changed after 3-way merge");
     }
 
-    // Immediately sync merged control data to server (if authenticated)
-    if (apiClient != nullptr && apiClient->isAuthenticated()) {
-        Serial.println("[WebServer] Uploading merged control data to server...");
-        if (apiClient->uploadControl(controlData)) {
-            Serial.println("[WebServer] Control data synced to server successfully");
-        } else {
-            Serial.println("[WebServer] WARNING: Failed to sync control data to server");
-        }
-    }
+    // NOTE: Control data sync to server is handled by periodic fetch/upload cycle
+    // No immediate upload needed - prevents blocking when server is slow/unreachable
+    // The device fetches control from server every 5 minutes, and if local is newer,
+    // it will naturally upload the changes during the next sync cycle
 
     // Send success response with merged values
     StaticJsonDocument<512> responseDoc;
