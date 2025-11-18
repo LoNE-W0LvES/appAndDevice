@@ -119,9 +119,9 @@ class OfflineDeviceService {
         await _cacheDeviceConfig(deviceId, localDevice.deviceConfig);
 
         AppConfig.offlineLog('✅ FRESH data received from device:');
-        AppConfig.offlineLog('   Water Level: ${localDevice.telemetryData['waterLevel']}');
-        AppConfig.offlineLog('   Pump: ${localDevice.controlData['pumpSwitch']?['value']}');
-        AppConfig.offlineLog('   Inflow: ${localDevice.telemetryData['inflow']}');
+        AppConfig.offlineLog('   Water Level: ${localDevice.telemetryData['waterLevel']?.value}');
+        AppConfig.offlineLog('   Pump: ${localDevice.controlData['pumpSwitch']?.value}');
+        AppConfig.offlineLog('   Inflow: ${localDevice.telemetryData['inflow']?.value}');
         return localDevice;
       } catch (e) {
         AppConfig.errorLog('❌ FAILED to fetch from device', error: e);
