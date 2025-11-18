@@ -266,35 +266,28 @@ void WebServer::handleGetTelemetry(AsyncWebServerRequest* request) {
     waterLevel["key"] = "waterLevel";
     waterLevel["label"] = "Water Level";
     waterLevel["type"] = "number";
-    waterLevel["value"] = telemetryHandler.getWaterLevel();
-
-    // Distance
-    JsonObject distance = doc.createNestedObject("distance");
-    distance["key"] = "distance";
-    distance["label"] = "Distance";
-    distance["type"] = "number";
-    distance["value"] = telemetryHandler.getDistance();
+    waterLevel["value"] = currentWaterLevel;
 
     // Current Inflow
     JsonObject currInflow = doc.createNestedObject("currInflow");
     currInflow["key"] = "currInflow";
     currInflow["label"] = "Current Inflow";
     currInflow["type"] = "number";
-    currInflow["value"] = telemetryHandler.getCurrInflow();
+    currInflow["value"] = currentInflow;
 
-    // Pump Status
+    // Pump Status (use webserver's current value, not telemetryHandler)
     JsonObject pumpStatus = doc.createNestedObject("pumpStatus");
     pumpStatus["key"] = "pumpStatus";
     pumpStatus["label"] = "Pump Status";
     pumpStatus["type"] = "number";
-    pumpStatus["value"] = telemetryHandler.getPumpStatus();
+    pumpStatus["value"] = currentPumpStatus;
 
     // Device Status (always 1 for online when responding)
     JsonObject status = doc.createNestedObject("Status");
     status["key"] = "Status";
     status["label"] = "Device Status";
     status["type"] = "number";
-    status["value"] = telemetryHandler.getIsOnline();
+    status["value"] = 1;  // Always online if webserver is responding
 
     // Timestamp
     doc["timestamp"] = (unsigned long)telemetryHandler.getTimestamp();
