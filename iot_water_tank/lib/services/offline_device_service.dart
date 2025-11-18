@@ -643,6 +643,105 @@ class OfflineDeviceService {
 
     AppConfig.offlineLog('Cleared cache for device: $deviceId');
   }
+
+  // =========================================================================
+  // TIMESTAMP SYNC METHODS
+  // =========================================================================
+
+  /// Check device timestamp and sync if needed
+  /// Returns true if sync was performed, false if timestamp was already accurate
+  Future<bool> checkAndSyncDeviceTime(String deviceId, String localIp) async {
+    if (_localDio == null) throw Exception('Service not initialized');
+
+    try {
+      // Get device timestamp info
+      final url = 'http://$localIp/$deviceId/timestamp';
+      final response = await _localDio!.get(url);
+
+      if (response.statusCode != 200) {
+        AppConfig.offlineLog('Failed to get device timestamp: ${response.statusCode}');
+        return false;
+      }
+
+      final data = response.data as Map<String, dynamic>;
+      final deviceTimestamp = data['timestamp'] as int? ?? 0;
+      final isSynced = data['synced'] as bool? ?? false;
+
+      // Get phone's current timestamp (milliseconds)
+      final phoneTimestamp = DateTime.now().millisecondsSinceEpoch;
+
+      // Check if sync is needed
+      bool needsSync = false;
+      String reason = '';
+
+      if (deviceTimestamp == 0) {
+        needsSync = true;
+        reason = 'device timestamp is zero';
+      } else if (!isSynced) {
+        needsSync = true;
+        reason = 'device time not synced with server';
+      } else {
+        // Check drift (difference between phone and device time)
+        final driftMs = (phoneTimestamp - deviceTimestamp).abs();
+        final driftSeconds = driftMs / 1000;
+
+        if (driftSeconds > 2.0) {
+          needsSync = true;
+          reason = 'time drift ${driftSeconds.toStringAsFixed(1)}s (> 2s threshold)';
+        }
+      }
+
+      if (needsSync) {
+        AppConfig.offlineLog('Device time sync needed: $reason');
+        AppConfig.offlineLog('  Device: ${DateTime.fromMillisecondsSinceEpoch(deviceTimestamp)}');
+        AppConfig.offlineLog('  Phone:  ${DateTime.fromMillisecondsSinceEpoch(phoneTimestamp)}');
+
+        // Sync device time from phone
+        await _syncDeviceTimestamp(deviceId, localIp, phoneTimestamp);
+        return true;
+      } else {
+        AppConfig.offlineLog('Device time is accurate (drift < 2s)');
+        return false;
+      }
+    } catch (e) {
+      AppConfig.offlineLog('Error checking device time: $e');
+      return false;
+    }
+  }
+
+  /// Sync device timestamp from phone
+  Future<void> _syncDeviceTimestamp(String deviceId, String localIp, int timestampMs) async {
+    if (_localDio == null) throw Exception('Service not initialized');
+
+    try {
+      final url = 'http://$localIp/$deviceId/timestamp';
+      final response = await _localDio!.post(
+        url,
+        data: jsonEncode({'timestamp': timestampMs}),
+        options: Options(
+          headers: {'Content-Type': 'application/json'},
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data as Map<String, dynamic>;
+        final success = data['success'] as bool? ?? false;
+
+        if (success) {
+          AppConfig.offlineLog('Device time synced successfully to: ${DateTime.fromMillisecondsSinceEpoch(timestampMs)}');
+        } else {
+          AppConfig.offlineLog('Device time sync failed: ${data['error']}');
+          throw ApiException(message: 'Failed to sync device time');
+        }
+      } else {
+        AppConfig.offlineLog('Device time sync failed: ${response.statusCode}');
+        throw ApiException(message: 'Failed to sync device time: ${response.statusCode}');
+      }
+    } catch (e) {
+      AppConfig.offlineLog('Error syncing device time: $e');
+      rethrow;
+    }
+  }
 }
 
 /// Result of sync operation

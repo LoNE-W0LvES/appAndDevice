@@ -24,7 +24,7 @@ import 'offline_mode_service.dart';
 /// the phone's cellular-synced clock as a reliable fallback.
 class TimestampService {
   static const Duration _timeout = Duration(seconds: 5);
-  static const int _maxDriftMs = 5000; // 5 seconds max acceptable drift
+  static const int _maxDriftMs = 2000; // 2 seconds max acceptable drift (user requirement)
   final ApiClient _apiClient = ApiClient();
   final OfflineModeService _offlineModeService = OfflineModeService();
 
@@ -195,22 +195,37 @@ class TimestampService {
           'drift: ${deviceTimestamp.drift}ms',
         );
 
-        // Step 3: Check drift and correct if needed
-        final currentDrift = calculateDrift(
-          serverTimestamp: referenceTimestamp,
-          deviceTimestamp: deviceTimestamp.timestamp,
-        );
+        // Step 3: Check if timestamp is zero or drift is too large
+        bool needsCorrection = false;
+        String correctionReason = '';
 
-        final driftAbs = currentDrift.abs();
+        // Check if device timestamp is zero
+        if (deviceTimestamp.timestamp == 0) {
+          needsCorrection = true;
+          correctionReason = 'device timestamp is zero';
+        } else {
+          // Check drift and correct if needed
+          final currentDrift = calculateDrift(
+            serverTimestamp: referenceTimestamp,
+            deviceTimestamp: deviceTimestamp.timestamp,
+          );
 
-        AppConfig.deviceLog(
-          'Calculated drift against $timestampSource: ${currentDrift}ms (abs: ${driftAbs}ms)',
-        );
+          final driftAbs = currentDrift.abs();
 
-        // If drift is too large, send corrected timestamp to device
-        if (driftAbs > _maxDriftMs) {
           AppConfig.deviceLog(
-            'Drift exceeds threshold ($_maxDriftMs ms). '
+            'Calculated drift against $timestampSource: ${currentDrift}ms (abs: ${driftAbs}ms)',
+          );
+
+          // If drift is too large, send corrected timestamp to device
+          if (driftAbs > _maxDriftMs) {
+            needsCorrection = true;
+            correctionReason = 'drift ${(driftAbs / 1000).toStringAsFixed(1)}s exceeds ${(_maxDriftMs / 1000).toStringAsFixed(1)}s threshold';
+          }
+        }
+
+        if (needsCorrection) {
+          AppConfig.deviceLog(
+            'Time sync needed: $correctionReason. '
             'Sending correction from $timestampSource to device...',
           );
 
