@@ -245,7 +245,8 @@ class OfflineDeviceService {
     String type, {
     String? localIp,
   }) async {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    // Use priority flag (timestamp=0) for app commands - they always take precedence
+    final timestamp = 0;
     final isOffline = await _offlineModeService.isOfflineModeEnabled();
 
     // Try local connection first if IP is available
@@ -406,10 +407,11 @@ class OfflineDeviceService {
     final url = 'http://$localIp/$deviceId/config';
 
     // Convert config to JSON format expected by device
+    // Use lastModified=0 (priority flag) for local updates from app
     final configData = deviceConfig.map(
       (key, value) => MapEntry(key, {
         'value': value.value,
-        'lastModified': DateTime.now().millisecondsSinceEpoch,
+        'lastModified': 0,  // Priority flag - app commands always take precedence
       }),
     );
 
