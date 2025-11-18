@@ -16,6 +16,9 @@ class OfflineDeviceService {
   final OfflineModeService _offlineModeService;
   Dio? _localDio;
 
+  // In-memory cache to avoid repeatedly reading from SharedPreferences
+  final Map<String, Map<String, DeviceConfigParameter>> _configCache = {};
+
   OfflineDeviceService()
       : _apiClient = ApiClient(),
         _offlineModeService = OfflineModeService();
@@ -342,6 +345,9 @@ class OfflineDeviceService {
         AppConfig.offlineLog('Attempting to update device config via local IP: $localIp');
         await _updateConfigLocal(deviceId, deviceConfig, localIp);
 
+        // Update cache after successful update
+        await _cacheDeviceConfig(deviceId, deviceConfig);
+
         AppConfig.offlineLog('Device config updated via local IP');
         return true;
       } catch (e) {
@@ -427,6 +433,10 @@ class OfflineDeviceService {
 
   /// Cache device config separately (for use with live data updates)
   Future<void> _cacheDeviceConfig(String deviceId, Map<String, DeviceConfigParameter> config) async {
+    // Store in memory cache
+    _configCache[deviceId] = config;
+
+    // Store in SharedPreferences
     final prefs = await SharedPreferences.getInstance();
     final cacheKey = 'device_config_$deviceId';
     final configJson = config.map((key, value) => MapEntry(key, value.toJson()));
@@ -437,6 +447,12 @@ class OfflineDeviceService {
 
   /// Get cached device config
   Future<Map<String, DeviceConfigParameter>?> _getCachedDeviceConfig(String deviceId) async {
+    // Check in-memory cache first
+    if (_configCache.containsKey(deviceId)) {
+      return _configCache[deviceId];
+    }
+
+    // Not in memory, read from SharedPreferences
     final prefs = await SharedPreferences.getInstance();
     final cacheKey = 'device_config_$deviceId';
     final jsonString = prefs.getString(cacheKey);
@@ -450,7 +466,8 @@ class OfflineDeviceService {
             config[key] = DeviceConfigParameter.fromJson(key, value);
           }
         });
-        AppConfig.offlineLog('Using cached device config for $deviceId');
+        // Store in memory cache for next time
+        _configCache[deviceId] = config;
         return config;
       } catch (e) {
         AppConfig.errorLog('Error parsing cached device config', error: e);
@@ -589,6 +606,10 @@ class OfflineDeviceService {
 
   /// Clear all cached data and pending changes
   Future<void> clearAllCache() async {
+    // Clear in-memory cache
+    _configCache.clear();
+
+    // Clear SharedPreferences cache
     final prefs = await SharedPreferences.getInstance();
     final keys = prefs.getKeys();
 
@@ -604,6 +625,10 @@ class OfflineDeviceService {
 
   /// Clear cache for a specific device
   Future<void> clearDeviceCache(String deviceId) async {
+    // Clear in-memory cache
+    _configCache.remove(deviceId);
+
+    // Clear SharedPreferences cache
     final prefs = await SharedPreferences.getInstance();
     final deviceCacheKey = 'device_cache_$deviceId';
     final configCacheKey = 'device_config_$deviceId';
