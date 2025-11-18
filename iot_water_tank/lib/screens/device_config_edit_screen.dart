@@ -166,13 +166,13 @@ class _DeviceConfigEditScreenState extends State<DeviceConfigEditScreen> {
             'Configuration updated successfully. ${_changedFields.length} parameter(s) changed.',
           ),
           backgroundColor: Colors.green,
-          duration: const Duration(seconds: 3),
+          duration: const Duration(seconds: 2),
         ),
       );
 
-      // Navigate back
+      // Navigate back with result to trigger refresh
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context, true); // Return true to indicate success
       }
     } on ApiException catch (e) {
       setState(() {

@@ -497,8 +497,8 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                           : null,
                       onTap: widget.device.deviceConfig.isEmpty
                           ? null
-                          : () {
-                              Navigator.push(
+                          : () async {
+                              final result = await Navigator.push<bool>(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => DeviceConfigEditScreen(
@@ -506,6 +506,11 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                                   ),
                                 ),
                               );
+
+                              // If config was updated, refresh device data
+                              if (result == true && mounted) {
+                                await context.read<DeviceProvider>().selectDevice(widget.device.id);
+                              }
                             },
                     ),
                     const Divider(height: 1),
