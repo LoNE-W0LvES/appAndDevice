@@ -328,8 +328,13 @@ class OfflineDeviceService {
         AppConfig.offlineLog('Attempting to update device config via local IP: $localIp');
         await _updateConfigLocal(deviceId, deviceConfig, localIp);
 
-        // Update cache after successful update
-        await _cacheDeviceConfig(deviceId, deviceConfig);
+        // Merge changed config with existing cached config to maintain full config
+        final existingConfig = await _getCachedDeviceConfig(deviceId) ?? {};
+        final mergedConfig = Map<String, DeviceConfigParameter>.from(existingConfig);
+        mergedConfig.addAll(deviceConfig);
+
+        // Cache the full merged config (not just changed fields)
+        await _cacheDeviceConfig(deviceId, mergedConfig);
 
         AppConfig.offlineLog('Device config updated via local IP');
         return true;
