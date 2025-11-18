@@ -431,9 +431,11 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
         Serial.println("  Pump Switch: " + String(controlData.pumpSwitch));
         Serial.println("  Config Update: " + String(controlData.config_update));
 
-        // Trigger pump callback if pump state changed
-        if (pumpStateChanged && pumpCallback != nullptr) {
-            Serial.println("[WebServer] Triggering pump control callback");
+        // ALWAYS trigger pump callback when app sends pump command (even if value unchanged)
+        // This ensures the pump is physically controlled even if a previous update failed
+        if (hasPumpSwitchChange && pumpCallback != nullptr) {
+            Serial.println("[WebServer] Triggering pump control callback (value " +
+                         String(pumpStateChanged ? "changed" : "unchanged") + ")");
             pumpCallback(controlData.pumpSwitch);
         }
 
@@ -452,6 +454,7 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
     // ✅ SERVER RULE 3: Value changed → Last-Write-Wins (per field)
     bool acceptedUpdate = false;
     bool pumpStateChanged = false;
+    bool pumpUpdateAccepted = false;
 
     // Check pumpSwitch timestamp
     if (hasPumpSwitchChange) {
@@ -463,6 +466,7 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
             controlData.pumpSwitch = incomingControl.pumpSwitch;
             controlData.pumpSwitchLastModified = incomingControl.pumpSwitchLastModified;
             acceptedUpdate = true;
+            pumpUpdateAccepted = true;
         } else {
             Serial.println("[WebServer] Pump switch timestamp older - rejecting");
         }
@@ -486,9 +490,11 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
         Serial.println("  Pump Switch: " + String(controlData.pumpSwitch));
         Serial.println("  Config Update: " + String(controlData.config_update));
 
-        // Trigger pump callback if pump state changed
-        if (pumpStateChanged && pumpCallback != nullptr) {
-            Serial.println("[WebServer] Triggering pump control callback");
+        // ALWAYS trigger pump callback when pump update is accepted (even if value unchanged)
+        // This ensures the pump is physically controlled even if a previous update failed
+        if (pumpUpdateAccepted && pumpCallback != nullptr) {
+            Serial.println("[WebServer] Triggering pump control callback (value " +
+                         String(pumpStateChanged ? "changed" : "unchanged") + ")");
             pumpCallback(controlData.pumpSwitch);
         }
 
