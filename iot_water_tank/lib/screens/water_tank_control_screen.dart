@@ -72,7 +72,6 @@ class _WaterTankControlScreenState extends State<WaterTankControlScreen>
   Future<void> _syncTimestamp() async {
     final deviceProvider = context.read<DeviceProvider>();
     final timestampProvider = context.read<TimestampProvider>();
-    final offlineProvider = context.read<OfflineProvider>();
 
     if (deviceProvider.selectedDevice != null) {
       final device = deviceProvider.selectedDevice!;
@@ -92,20 +91,12 @@ class _WaterTankControlScreenState extends State<WaterTankControlScreen>
       }
 
       if (localIp != null && localIp.isNotEmpty) {
-        // In offline mode, sync with device using phone's Unix time
-        if (offlineProvider.isOfflineModeEnabled) {
-          AppConfig.offlineLog('Offline mode: Syncing timestamp with device only');
-          await timestampProvider.syncDevice(
-            device.deviceId,
-            localIp: localIp,
-          );
-        } else {
-          // Online mode: sync with both server and device
-          await timestampProvider.syncDevice(
-            device.deviceId,
-            localIp: localIp,
-          );
-        }
+        // Sync timestamp with device
+        // TimestampService handles offline/online mode automatically
+        await timestampProvider.syncDevice(
+          device.deviceId,
+          localIp: localIp,
+        );
       }
     }
   }
