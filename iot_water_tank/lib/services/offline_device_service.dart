@@ -314,6 +314,27 @@ class OfflineDeviceService {
     }
   }
 
+  /// Check device status via local endpoint
+  Future<Map<String, dynamic>> checkDeviceStatus(String localIp, String deviceId) async {
+    if (_localDio == null) throw Exception('Service not initialized');
+
+    final url = 'http://$localIp/$deviceId/status';
+    AppConfig.offlineLog('Checking device status at: $url');
+
+    try {
+      final response = await _localDio!.get(url);
+
+      if (response.statusCode == 200 && response.data is Map) {
+        return Map<String, dynamic>.from(response.data as Map);
+      }
+
+      throw ApiException(message: 'Invalid status response from device');
+    } catch (e) {
+      AppConfig.offlineLog('Device status check failed: $e');
+      rethrow;
+    }
+  }
+
   /// Update device configuration with offline support
   Future<bool> updateDeviceConfig(
     String deviceId,

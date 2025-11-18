@@ -114,60 +114,87 @@ class _DeviceConfigEditScreenState extends State<DeviceConfigEditScreen> {
       // Track what was updated
       bool localUpdated = false;
       bool serverUpdated = false;
+      bool deviceExistsLocally = false;
 
-      // 1. Update LOCAL device if IP is available
+      // Check if device exists locally (if we have local IP)
       if (localIp != null && localIp.isNotEmpty) {
-        try {
-          AppConfig.configLog('Updating local device at $localIp...');
-          await _offlineDeviceService.updateDeviceConfig(
-            widget.device.deviceId,
-            _modifiedConfig,  // Send ALL fields
-            localIp: localIp,
-          );
-          localUpdated = true;
-          AppConfig.configLog('Local device updated successfully');
-        } catch (e) {
-          AppConfig.configLog('Local device update failed: $e');
-          // Continue to try server update
-        }
+        deviceExistsLocally = await _checkDeviceLocalStatus(localIp);
+        AppConfig.configLog('Device exists locally: $deviceExistsLocally');
       }
 
-      if (!mounted) return;
+      // OFFLINE MODE: Only update local device
+      if (isOffline) {
+        if (!deviceExistsLocally) {
+          throw ApiException(
+            message: 'Device not reachable locally. Please check device IP and connection.',
+          );
+        }
 
-      // 2. Update SERVER if NOT in offline mode
-      if (!isOffline) {
-        try {
-          AppConfig.configLog('Updating server...');
+        AppConfig.configLog('Offline mode: Updating local device only');
+        await _offlineDeviceService.updateDeviceConfig(
+          widget.device.deviceId,
+          _modifiedConfig,  // Send ALL fields
+          localIp: localIp,
+        );
+        localUpdated = true;
+
+        if (!mounted) return;
+
+        // Update provider with local data
+        final updatedDevice = widget.device.copyWith(deviceConfig: _modifiedConfig);
+        context.read<DeviceProvider>().setSelectedDevice(updatedDevice);
+      }
+      // ONLINE MODE
+      else {
+        // If device exists locally, ONLY update device (device will sync to server)
+        if (deviceExistsLocally) {
+          AppConfig.configLog('Online mode: Device exists locally, updating device only (device will sync to server)');
+          try {
+            await _offlineDeviceService.updateDeviceConfig(
+              widget.device.deviceId,
+              _modifiedConfig,  // Send ALL fields
+              localIp: localIp,
+            );
+            localUpdated = true;
+
+            if (!mounted) return;
+
+            // Check if we got a new IP from config and update it
+            final newIp = _modifiedConfig['ip_address']?.value?.toString();
+            if (newIp != null && newIp.isNotEmpty && newIp != localIp) {
+              AppConfig.configLog('Updating device local IP: $localIp → $newIp');
+              final updatedDevice = widget.device.copyWith(
+                deviceConfig: _modifiedConfig,
+                localIp: newIp,
+              );
+              context.read<DeviceProvider>().setSelectedDevice(updatedDevice);
+            } else {
+              final updatedDevice = widget.device.copyWith(deviceConfig: _modifiedConfig);
+              context.read<DeviceProvider>().setSelectedDevice(updatedDevice);
+            }
+          } catch (e) {
+            AppConfig.configLog('Local device update failed: $e');
+            // If local update fails, fall back to server
+            AppConfig.configLog('Falling back to server update...');
+            final updatedDevice = await _deviceService.updateDeviceConfig(
+              widget.device.id,
+              _modifiedConfig,  // Send ALL fields
+            );
+            serverUpdated = true;
+            context.read<DeviceProvider>().setSelectedDevice(updatedDevice);
+          }
+        }
+        // If device doesn't exist locally, update server
+        else {
+          AppConfig.configLog('Online mode: Device not found locally, updating server');
           final updatedDevice = await _deviceService.updateDeviceConfig(
             widget.device.id,
             _modifiedConfig,  // Send ALL fields
           );
           serverUpdated = true;
-          AppConfig.configLog('Server updated successfully');
 
-          // Update provider with server response
+          if (!mounted) return;
           context.read<DeviceProvider>().setSelectedDevice(updatedDevice);
-        } catch (e) {
-          AppConfig.configLog('Server update failed: $e');
-
-          // If local was updated but server failed, still update provider with local data
-          if (localUpdated) {
-            final updatedDevice = widget.device.copyWith(deviceConfig: _modifiedConfig);
-            context.read<DeviceProvider>().setSelectedDevice(updatedDevice);
-          } else {
-            // Both failed
-            rethrow;
-          }
-        }
-      } else {
-        // Offline mode: only local update, update provider with local data
-        if (localUpdated) {
-          final updatedDevice = widget.device.copyWith(deviceConfig: _modifiedConfig);
-          context.read<DeviceProvider>().setSelectedDevice(updatedDevice);
-        } else {
-          throw ApiException(
-            message: 'Device local IP not set or unreachable. Please check device settings.',
-          );
         }
       }
 
@@ -220,6 +247,23 @@ class _DeviceConfigEditScreenState extends State<DeviceConfigEditScreen> {
           duration: Duration(seconds: 4),
         ),
       );
+    }
+  }
+
+  /// Check if device exists locally by checking status endpoint
+  Future<bool> _checkDeviceLocalStatus(String localIp) async {
+    try {
+      final url = 'http://$localIp/${widget.device.deviceId}/status';
+      final response = await _offlineDeviceService.checkDeviceStatus(localIp, widget.device.deviceId);
+
+      // Check if status is "ready" and deviceId matches
+      if (response['status'] == 'ready' && response['deviceId'] == widget.device.deviceId) {
+        return true;
+      }
+      return false;
+    } catch (e) {
+      AppConfig.configLog('Device status check failed: $e');
+      return false;
     }
   }
 
