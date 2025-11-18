@@ -278,7 +278,7 @@ void WebServer::handleGetTelemetry(AsyncWebServerRequest* request) {
 
     request->send(200, "application/json", response);
 
-    DEBUG_RESPONSE_PRINTLN("[WebServer] Telemetry: " + response);
+    DEBUG_RESPONSE_WS_PRINTLN("[WebServer] Telemetry: " + response);
 }
 
 void WebServer::handleGetControl(AsyncWebServerRequest* request) {
@@ -311,7 +311,7 @@ void WebServer::handleGetControl(AsyncWebServerRequest* request) {
 
     request->send(200, "application/json", response);
 
-    DEBUG_RESPONSE_PRINTLN("[WebServer] Control status: " + response);
+    DEBUG_RESPONSE_WS_PRINTLN("[WebServer] Control status: " + response);
 }
 
 void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
@@ -883,7 +883,7 @@ void WebServer::handleGetTimestamp(AsyncWebServerRequest* request) {
 
     request->send(200, "application/json", response);
 
-    DEBUG_RESPONSE_PRINTLN("[WebServer] Timestamp info: " + response);
+    DEBUG_RESPONSE_WS_PRINTLN("[WebServer] Timestamp info: " + response);
 }
 
 void WebServer::handlePostTimestamp(AsyncWebServerRequest* request, uint8_t* data,

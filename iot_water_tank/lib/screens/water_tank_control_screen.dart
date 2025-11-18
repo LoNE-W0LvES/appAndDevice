@@ -25,7 +25,7 @@ class WaterTankControlScreen extends StatefulWidget {
 }
 
 class _WaterTankControlScreenState extends State<WaterTankControlScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   bool _isTogglingPump = false;
   Timer? _refreshTimer;
   DateTime _lastUpdate = DateTime.now();
@@ -35,6 +35,9 @@ class _WaterTankControlScreenState extends State<WaterTankControlScreen>
   @override
   void initState() {
     super.initState();
+    // Add observer for app lifecycle changes
+    WidgetsBinding.instance.addObserver(this);
+
     // Initialize pulse animation for LIVE indicator
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1500),
@@ -47,6 +50,20 @@ class _WaterTankControlScreenState extends State<WaterTankControlScreen>
     _syncTimestamp();
     // Start auto-refresh timer (every 3 seconds)
     _startAutoRefresh();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Pause/resume timer based on app state
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      // App is in background, pause timer to save resources
+      _refreshTimer?.cancel();
+    } else if (state == AppLifecycleState.resumed) {
+      // App is back in foreground, restart timer if screen is mounted
+      if (mounted && _refreshTimer == null || !(_refreshTimer?.isActive ?? false)) {
+        _startAutoRefresh();
+      }
+    }
   }
 
   /// Sync timestamp with device
@@ -70,6 +87,8 @@ class _WaterTankControlScreenState extends State<WaterTankControlScreen>
 
   @override
   void dispose() {
+    // Remove lifecycle observer
+    WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
     _pulseController.dispose();
     super.dispose();
@@ -77,6 +96,17 @@ class _WaterTankControlScreenState extends State<WaterTankControlScreen>
 
   void _startAutoRefresh() {
     _refreshTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      // Only fetch data if this screen is the currently visible route
+      // This prevents unnecessary data fetching when user navigates to other screens
+      if (!mounted) return;
+
+      final isCurrentRoute = ModalRoute.of(context)?.isCurrent ?? false;
+      if (!isCurrentRoute) {
+        // User has navigated to another screen (e.g., device settings, config editor)
+        // Skip this fetch cycle to save resources and avoid unnecessary requests
+        return;
+      }
+
       final deviceProvider = context.read<DeviceProvider>();
       final offlineProvider = context.read<OfflineProvider>();
       final timestampProvider = context.read<TimestampProvider>();
