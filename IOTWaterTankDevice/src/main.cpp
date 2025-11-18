@@ -72,6 +72,13 @@ unsigned long lastDisplayUpdate = 0;
 bool systemInitialized = false;
 bool configFetched = false;
 
+// FreeRTOS task management
+SemaphoreHandle_t configMutex = NULL;  // Protect deviceConfig and lastSyncedConfig
+TaskHandle_t telemetryTaskHandle = NULL;
+TaskHandle_t controlTaskHandle = NULL;
+TaskHandle_t configFetchTaskHandle = NULL;
+TaskHandle_t configSyncTaskHandle = NULL;
+
 // ============================================================================
 // FORWARD DECLARATIONS
 // ============================================================================
@@ -400,6 +407,294 @@ bool connectToBackend() {
 }
 
 // ============================================================================
+// ASYNC TASK FUNCTIONS (FreeRTOS)
+// ============================================================================
+
+/**
+ * Async task: Upload telemetry to backend
+ * Runs in background to prevent blocking main loop during network delays
+ */
+void uploadTelemetryTask(void* parameter) {
+    Serial.println("[AsyncTask] Telemetry upload started");
+
+    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
+        Serial.println("[AsyncTask] Cannot upload telemetry - not connected");
+        telemetryTaskHandle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    float waterLevel = sensorManager.getWaterLevel();
+    float currInflow = sensorManager.getCurrentInflow();
+    int pumpStatus = relayController.getPumpStatus();
+
+    if (apiClient.uploadTelemetry(waterLevel, currInflow, pumpStatus)) {
+        Serial.println("[AsyncTask] Telemetry uploaded successfully");
+    } else {
+        Serial.println("[AsyncTask] Failed to upload telemetry");
+    }
+
+    telemetryTaskHandle = NULL;
+    vTaskDelete(NULL);
+}
+
+/**
+ * Async task: Fetch control data from backend
+ * Runs in background to prevent blocking main loop during network delays
+ */
+void fetchControlDataTask(void* parameter) {
+    Serial.println("[AsyncTask] Control fetch started");
+
+    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
+        Serial.println("[AsyncTask] Cannot fetch control - not connected");
+        controlTaskHandle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    ControlData tempControlData;
+    if (apiClient.fetchControl(tempControlData)) {
+        Serial.println("[AsyncTask] Control data fetched");
+
+        // Take mutex before updating shared state
+        if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
+            controlData = tempControlData;
+
+            // Update webserver with latest control data
+            webServer.updateControlData(controlData);
+
+            // Apply pump switch command
+            if (relayController.getMode() == MODE_MANUAL) {
+                relayController.setCloudCommand(controlData.pumpSwitch);
+            }
+
+            // Check config update flag
+            if (controlData.config_update) {
+                Serial.println("[AsyncTask] Config update requested, re-fetching configuration...");
+
+                // Store previous config to detect changes
+                DeviceConfig previousConfig = deviceConfig;
+
+                if (apiClient.fetchAndApplyServerConfig(deviceConfig)) {
+                    // Check if values actually changed during merge
+                    bool valuesChanged = deviceConfig.valuesChanged(previousConfig);
+
+                    // Check if merged values differ from server values
+                    if (configHandler.valuesDifferFromAPI()) {
+                        Serial.println("[AsyncTask] Merged values differ from server - syncing back to server...");
+                        apiClient.markConfigModified();
+                        // Note: Don't call syncConfigToServer here, let main loop handle it
+                    }
+
+                    // Only apply and save if values actually changed
+                    if (valuesChanged) {
+                        Serial.println("[AsyncTask] Config values changed - applying and saving...");
+
+                        // Apply new configuration
+                        sensorManager.setTankConfig(
+                            deviceConfig.tankHeight,
+                            deviceConfig.tankWidth,
+                            deviceConfig.tankShape
+                        );
+
+                        displayManager.setTankSettings(
+                            deviceConfig.tankHeight,
+                            deviceConfig.tankWidth,
+                            deviceConfig.tankShape,
+                            deviceConfig.upperThreshold,
+                            deviceConfig.lowerThreshold
+                        );
+
+                        webServer.updateDeviceConfig(deviceConfig);
+
+                        // Save config to NVS for persistence across reboots
+                        storageManager.saveDeviceConfig(
+                            deviceConfig.upperThreshold,
+                            deviceConfig.lowerThreshold,
+                            deviceConfig.tankHeight,
+                            deviceConfig.tankWidth,
+                            deviceConfig.tankShape
+                        );
+
+                        Serial.println("[AsyncTask] Configuration updated successfully");
+                    } else {
+                        Serial.println("[AsyncTask] Config fetched but values unchanged - skipping save");
+                    }
+                }
+            }
+
+            xSemaphoreGive(configMutex);
+        }
+    } else {
+        Serial.println("[AsyncTask] Failed to fetch control data");
+    }
+
+    controlTaskHandle = NULL;
+    vTaskDelete(NULL);
+}
+
+/**
+ * Async task: Fetch config from server
+ * Runs in background to prevent blocking main loop during network delays
+ */
+void fetchConfigFromServerTask(void* parameter) {
+    Serial.println("[AsyncTask] Config fetch started");
+
+    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
+        configFetchTaskHandle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // IMPORTANT: Only fetch FROM server if we don't have pending changes TO server
+    if (apiClient.hasPendingConfigSync()) {
+        Serial.println("[AsyncTask] Skipping server fetch - pending local changes to sync first");
+        configFetchTaskHandle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    Serial.println("[AsyncTask] Fetching config from server...");
+
+    // Take mutex before accessing deviceConfig
+    if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
+        // Store previous config to detect changes
+        DeviceConfig previousConfig = deviceConfig;
+
+        // Fetch latest config from server
+        if (apiClient.fetchAndApplyServerConfig(deviceConfig)) {
+            // Check if values actually changed during merge
+            bool valuesChanged = deviceConfig.valuesChanged(previousConfig);
+
+            Serial.printf("[AsyncTask] Values changed check: %s\n", valuesChanged ? "YES" : "NO");
+            if (valuesChanged) {
+                Serial.println("[AsyncTask] Old vs New values:");
+                Serial.printf("  upperThreshold: %.2f -> %.2f\n", previousConfig.upperThreshold, deviceConfig.upperThreshold);
+                Serial.printf("  lowerThreshold: %.2f -> %.2f\n", previousConfig.lowerThreshold, deviceConfig.lowerThreshold);
+            }
+
+            // Check if merged values differ from server values (API values)
+            if (configHandler.valuesDifferFromAPI()) {
+                Serial.println("[AsyncTask] Merged values differ from server - syncing back to server...");
+                apiClient.markConfigModified();
+                // Note: Don't call syncConfigToServer here, let main loop handle it
+            } else {
+                Serial.println("[AsyncTask] Merged values match server values - no sync needed");
+            }
+
+            // Only apply and save if values actually changed
+            if (valuesChanged) {
+                Serial.println("[AsyncTask] Config values changed - applying and saving...");
+
+                // Update last synced config (oldData = newData)
+                lastSyncedConfig = deviceConfig;
+
+                // Apply new configuration
+                sensorManager.setTankConfig(
+                    deviceConfig.tankHeight,
+                    deviceConfig.tankWidth,
+                    deviceConfig.tankShape
+                );
+
+                displayManager.setTankSettings(
+                    deviceConfig.tankHeight,
+                    deviceConfig.tankWidth,
+                    deviceConfig.tankShape,
+                    deviceConfig.upperThreshold,
+                    deviceConfig.lowerThreshold
+                );
+
+                webServer.updateDeviceConfig(deviceConfig);
+
+                // Save config to NVS for persistence across reboots
+                storageManager.saveDeviceConfig(
+                    deviceConfig.upperThreshold,
+                    deviceConfig.lowerThreshold,
+                    deviceConfig.tankHeight,
+                    deviceConfig.tankWidth,
+                    deviceConfig.tankShape
+                );
+
+                Serial.println("[AsyncTask] Config fetched and applied from server");
+            } else {
+                Serial.println("[AsyncTask] Config fetched but values unchanged - skipping save");
+            }
+        } else {
+            Serial.println("[AsyncTask] Failed to fetch config from server");
+        }
+
+        xSemaphoreGive(configMutex);
+    }
+
+    configFetchTaskHandle = NULL;
+    vTaskDelete(NULL);
+}
+
+/**
+ * Async task: Sync config to server
+ * Runs in background to prevent blocking main loop during network delays
+ */
+void syncConfigToServerTask(void* parameter) {
+    Serial.println("[AsyncTask] Config sync started");
+
+    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
+        configSyncTaskHandle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Take mutex before accessing deviceConfig
+    if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
+        // Check if device has pending config changes to sync
+        if (apiClient.hasPendingConfigSync()) {
+            // Check if config values have actually changed (oldData != newData)
+            if (deviceConfig.valuesChanged(lastSyncedConfig)) {
+                Serial.println("[AsyncTask] Config values changed - syncing to server...");
+                Serial.println("  Upper Threshold: " + String(lastSyncedConfig.upperThreshold) + " → " + String(deviceConfig.upperThreshold));
+                Serial.println("  Lower Threshold: " + String(lastSyncedConfig.lowerThreshold) + " → " + String(deviceConfig.lowerThreshold));
+
+                // Trigger sync (this will send config to server with priority)
+                apiClient.onDeviceOnline(deviceConfig);
+
+                // Update last synced config (oldData = newData)
+                lastSyncedConfig = deviceConfig;
+
+                // Save config to NVS for persistence across reboots
+                storageManager.saveDeviceConfig(
+                    deviceConfig.upperThreshold,
+                    deviceConfig.lowerThreshold,
+                    deviceConfig.tankHeight,
+                    deviceConfig.tankWidth,
+                    deviceConfig.tankShape
+                );
+
+                // Reapply config after sync
+                sensorManager.setTankConfig(
+                    deviceConfig.tankHeight,
+                    deviceConfig.tankWidth,
+                    deviceConfig.tankShape
+                );
+                displayManager.setTankSettings(
+                    deviceConfig.tankHeight,
+                    deviceConfig.tankWidth,
+                    deviceConfig.tankShape,
+                    deviceConfig.upperThreshold,
+                    deviceConfig.lowerThreshold
+                );
+                webServer.updateDeviceConfig(deviceConfig);
+            } else {
+                Serial.println("[AsyncTask] Config values unchanged - skipping sync");
+            }
+        }
+
+        xSemaphoreGive(configMutex);
+    }
+
+    configSyncTaskHandle = NULL;
+    vTaskDelete(NULL);
+}
+
+// ============================================================================
 // MAIN TASK FUNCTIONS
 // ============================================================================
 
@@ -427,100 +722,55 @@ void updateSensors() {
 
 /**
  * Upload telemetry to backend (every 30 seconds)
+ * Launches async task to prevent blocking main loop
  */
 void uploadTelemetry() {
-    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
-        Serial.println("[Main] Cannot upload telemetry - not connected");
+    // Skip if task is already running
+    if (telemetryTaskHandle != NULL) {
+        Serial.println("[Main] Telemetry task already running, skipping...");
         return;
     }
 
-    float waterLevel = sensorManager.getWaterLevel();
-    float currInflow = sensorManager.getCurrentInflow();
-    int pumpStatus = relayController.getPumpStatus();
+    // Create async task for telemetry upload
+    BaseType_t result = xTaskCreate(
+        uploadTelemetryTask,     // Task function
+        "TelemetryUpload",       // Task name
+        4096,                    // Stack size (bytes)
+        NULL,                    // Task parameters
+        1,                       // Priority (1 = low, higher than idle)
+        &telemetryTaskHandle     // Task handle
+    );
 
-    if (apiClient.uploadTelemetry(waterLevel, currInflow, pumpStatus)) {
-        Serial.println("[Main] Telemetry uploaded successfully");
-    } else {
-        Serial.println("[Main] Failed to upload telemetry");
+    if (result != pdPASS) {
+        Serial.println("[Main] Failed to create telemetry task");
+        telemetryTaskHandle = NULL;
     }
 }
 
 /**
  * Fetch control data from backend (every 5 minutes)
+ * Launches async task to prevent blocking main loop
  */
 void fetchControlData() {
-    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
-        Serial.println("[Main] Cannot fetch control - not connected");
+    // Skip if task is already running
+    if (controlTaskHandle != NULL) {
+        Serial.println("[Main] Control fetch task already running, skipping...");
         return;
     }
 
-    if (apiClient.fetchControl(controlData)) {
-        Serial.println("[Main] Control data fetched");
+    // Create async task for control data fetch
+    BaseType_t result = xTaskCreate(
+        fetchControlDataTask,    // Task function
+        "ControlFetch",          // Task name
+        8192,                    // Stack size (bytes) - larger for config operations
+        NULL,                    // Task parameters
+        1,                       // Priority (1 = low, higher than idle)
+        &controlTaskHandle       // Task handle
+    );
 
-        // Update webserver with latest control data
-        webServer.updateControlData(controlData);
-
-        // Apply pump switch command
-        if (relayController.getMode() == MODE_MANUAL) {
-            relayController.setCloudCommand(controlData.pumpSwitch);
-        }
-
-        // Check config update flag
-        if (controlData.config_update) {
-            Serial.println("[Main] Config update requested, re-fetching configuration...");
-
-            // Store previous config to detect changes
-            DeviceConfig previousConfig = deviceConfig;
-
-            if (apiClient.fetchAndApplyServerConfig(deviceConfig)) {
-                // Check if values actually changed during merge
-                bool valuesChanged = deviceConfig.valuesChanged(previousConfig);
-
-                // Check if merged values differ from server values
-                if (configHandler.valuesDifferFromAPI()) {
-                    Serial.println("[Main] Merged values differ from server - syncing back to server...");
-                    apiClient.markConfigModified();
-                    syncConfigToServer();
-                }
-
-                // Only apply and save if values actually changed
-                if (valuesChanged) {
-                    Serial.println("[Main] Config values changed - applying and saving...");
-
-                    // Apply new configuration
-                    sensorManager.setTankConfig(
-                        deviceConfig.tankHeight,
-                        deviceConfig.tankWidth,
-                        deviceConfig.tankShape
-                    );
-
-                    displayManager.setTankSettings(
-                        deviceConfig.tankHeight,
-                        deviceConfig.tankWidth,
-                        deviceConfig.tankShape,
-                        deviceConfig.upperThreshold,
-                        deviceConfig.lowerThreshold
-                    );
-
-                    webServer.updateDeviceConfig(deviceConfig);
-
-                    // Save config to NVS for persistence across reboots
-                    storageManager.saveDeviceConfig(
-                        deviceConfig.upperThreshold,
-                        deviceConfig.lowerThreshold,
-                        deviceConfig.tankHeight,
-                        deviceConfig.tankWidth,
-                        deviceConfig.tankShape
-                    );
-
-                    Serial.println("[Main] Configuration updated successfully");
-                } else {
-                    Serial.println("[Main] Config fetched but values unchanged - skipping save");
-                }
-            }
-        }
-    } else {
-        Serial.println("[Main] Failed to fetch control data");
+    if (result != pdPASS) {
+        Serial.println("[Main] Failed to create control fetch task");
+        controlTaskHandle = NULL;
     }
 }
 
@@ -551,52 +801,28 @@ void checkOTAUpdate() {
  * Sync config to server if locally modified
  * Only syncs if data has actually changed (oldData != newData)
  * Called immediately when config changes (via callback from webserver)
+ * Launches async task to prevent blocking main loop
  */
 void syncConfigToServer() {
-    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
-        return;  // Skip if not connected
+    // Skip if task is already running
+    if (configSyncTaskHandle != NULL) {
+        Serial.println("[Main] Config sync task already running, skipping...");
+        return;
     }
 
-    // Check if device has pending config changes to sync
-    if (apiClient.hasPendingConfigSync()) {
-        // Check if config values have actually changed (oldData != newData)
-        if (deviceConfig.valuesChanged(lastSyncedConfig)) {
-            Serial.println("[Main] Config values changed - syncing to server...");
-            Serial.println("  Upper Threshold: " + String(lastSyncedConfig.upperThreshold) + " → " + String(deviceConfig.upperThreshold));
-            Serial.println("  Lower Threshold: " + String(lastSyncedConfig.lowerThreshold) + " → " + String(deviceConfig.lowerThreshold));
+    // Create async task for config sync
+    BaseType_t result = xTaskCreate(
+        syncConfigToServerTask,  // Task function
+        "ConfigSync",            // Task name
+        8192,                    // Stack size (bytes)
+        NULL,                    // Task parameters
+        1,                       // Priority (1 = low, higher than idle)
+        &configSyncTaskHandle    // Task handle
+    );
 
-            // Trigger sync (this will send config to server with priority)
-            apiClient.onDeviceOnline(deviceConfig);
-
-            // Update last synced config (oldData = newData)
-            lastSyncedConfig = deviceConfig;
-
-            // Save config to NVS for persistence across reboots
-            storageManager.saveDeviceConfig(
-                deviceConfig.upperThreshold,
-                deviceConfig.lowerThreshold,
-                deviceConfig.tankHeight,
-                deviceConfig.tankWidth,
-                deviceConfig.tankShape
-            );
-
-            // Reapply config after sync
-            sensorManager.setTankConfig(
-                deviceConfig.tankHeight,
-                deviceConfig.tankWidth,
-                deviceConfig.tankShape
-            );
-            displayManager.setTankSettings(
-                deviceConfig.tankHeight,
-                deviceConfig.tankWidth,
-                deviceConfig.tankShape,
-                deviceConfig.upperThreshold,
-                deviceConfig.lowerThreshold
-            );
-            webServer.updateDeviceConfig(deviceConfig);
-        } else {
-            Serial.println("[Main] Config values unchanged - skipping sync");
-        }
+    if (result != pdPASS) {
+        Serial.println("[Main] Failed to create config sync task");
+        configSyncTaskHandle = NULL;
     }
 }
 
@@ -604,89 +830,28 @@ void syncConfigToServer() {
  * Fetch config from server periodically (every 30 seconds)
  * Only fetches when there's NO pending config to upload (bidirectional sync)
  * If hasPendingConfigSync() == true, skip fetch to avoid conflicts
+ * Launches async task to prevent blocking main loop
  */
 void fetchConfigFromServer() {
-    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
-        return;  // Skip if not connected
-    }
-
-    // IMPORTANT: Only fetch FROM server if we don't have pending changes TO server
-    // This prevents overwriting local changes that haven't been synced yet
-    if (apiClient.hasPendingConfigSync()) {
-        Serial.println("[Main] Skipping server fetch - pending local changes to sync first");
+    // Skip if task is already running
+    if (configFetchTaskHandle != NULL) {
+        Serial.println("[Main] Config fetch task already running, skipping...");
         return;
     }
 
-    Serial.println("[Main] Fetching config from server...");
+    // Create async task for config fetch
+    BaseType_t result = xTaskCreate(
+        fetchConfigFromServerTask,  // Task function
+        "ConfigFetch",              // Task name
+        8192,                       // Stack size (bytes)
+        NULL,                       // Task parameters
+        1,                          // Priority (1 = low, higher than idle)
+        &configFetchTaskHandle      // Task handle
+    );
 
-    // Store previous config to detect changes
-    DeviceConfig previousConfig = deviceConfig;
-
-    // Fetch latest config from server
-    if (apiClient.fetchAndApplyServerConfig(deviceConfig)) {
-        // Check if values actually changed during merge
-        bool valuesChanged = deviceConfig.valuesChanged(previousConfig);
-
-        Serial.printf("[Main] Values changed check: %s\n", valuesChanged ? "YES" : "NO");
-        if (valuesChanged) {
-            Serial.println("[Main] Old vs New values:");
-            Serial.printf("  upperThreshold: %.2f -> %.2f\n", previousConfig.upperThreshold, deviceConfig.upperThreshold);
-            Serial.printf("  lowerThreshold: %.2f -> %.2f\n", previousConfig.lowerThreshold, deviceConfig.lowerThreshold);
-        }
-
-        // Check if merged values differ from server values (API values)
-        // This happens when local/device values won the 3-way merge
-        if (configHandler.valuesDifferFromAPI()) {
-            Serial.println("[Main] Merged values differ from server - syncing back to server...");
-
-            // Mark config as modified so it will be uploaded with priority
-            apiClient.markConfigModified();
-
-            // Immediately sync to server to ensure server has the winning values
-            syncConfigToServer();
-        } else {
-            Serial.println("[Main] Merged values match server values - no sync needed");
-        }
-
-        // Only apply and save if values actually changed
-        if (valuesChanged) {
-            Serial.println("[Main] Config values changed - applying and saving...");
-
-            // Update last synced config (oldData = newData)
-            lastSyncedConfig = deviceConfig;
-
-            // Apply new configuration
-            sensorManager.setTankConfig(
-                deviceConfig.tankHeight,
-                deviceConfig.tankWidth,
-                deviceConfig.tankShape
-            );
-
-            displayManager.setTankSettings(
-                deviceConfig.tankHeight,
-                deviceConfig.tankWidth,
-                deviceConfig.tankShape,
-                deviceConfig.upperThreshold,
-                deviceConfig.lowerThreshold
-            );
-
-            webServer.updateDeviceConfig(deviceConfig);
-
-            // Save config to NVS for persistence across reboots
-            storageManager.saveDeviceConfig(
-                deviceConfig.upperThreshold,
-                deviceConfig.lowerThreshold,
-                deviceConfig.tankHeight,
-                deviceConfig.tankWidth,
-                deviceConfig.tankShape
-            );
-
-            Serial.println("[Main] Config fetched and applied from server");
-        } else {
-            Serial.println("[Main] Config fetched but values unchanged - skipping save");
-        }
-    } else {
-        Serial.println("[Main] Failed to fetch config from server");
+    if (result != pdPASS) {
+        Serial.println("[Main] Failed to create config fetch task");
+        configFetchTaskHandle = NULL;
     }
 }
 
@@ -793,6 +958,14 @@ void setup() {
     // Initialize system
     initializeSystem();
 
+    // Create mutex for protecting shared config data
+    configMutex = xSemaphoreCreateMutex();
+    if (configMutex == NULL) {
+        Serial.println("[Main] ERROR: Failed to create config mutex!");
+    } else {
+        Serial.println("[Main] Config mutex created successfully");
+    }
+
     // Connect to backend
     systemInitialized = connectToBackend();
 
@@ -830,25 +1003,31 @@ void loop() {
         // Device just came online
         if (isConnected && !wasConnected) {
             Serial.println("[Main] Device transitioned to ONLINE");
-            apiClient.onDeviceOnline(deviceConfig);
 
-            // Update last synced config (oldData = newData)
-            lastSyncedConfig = deviceConfig;
+            // Take mutex before accessing deviceConfig
+            if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
+                apiClient.onDeviceOnline(deviceConfig);
 
-            // Reapply config after sync
-            sensorManager.setTankConfig(
-                deviceConfig.tankHeight,
-                deviceConfig.tankWidth,
-                deviceConfig.tankShape
-            );
-            displayManager.setTankSettings(
-                deviceConfig.tankHeight,
-                deviceConfig.tankWidth,
-                deviceConfig.tankShape,
-                deviceConfig.upperThreshold,
-                deviceConfig.lowerThreshold
-            );
-            webServer.updateDeviceConfig(deviceConfig);
+                // Update last synced config (oldData = newData)
+                lastSyncedConfig = deviceConfig;
+
+                // Reapply config after sync
+                sensorManager.setTankConfig(
+                    deviceConfig.tankHeight,
+                    deviceConfig.tankWidth,
+                    deviceConfig.tankShape
+                );
+                displayManager.setTankSettings(
+                    deviceConfig.tankHeight,
+                    deviceConfig.tankWidth,
+                    deviceConfig.tankShape,
+                    deviceConfig.upperThreshold,
+                    deviceConfig.lowerThreshold
+                );
+                webServer.updateDeviceConfig(deviceConfig);
+
+                xSemaphoreGive(configMutex);
+            }
         }
 
         // Device just went offline
