@@ -262,28 +262,38 @@ void WebServer::handleGetTelemetry(AsyncWebServerRequest* request) {
     waterLevel["key"] = "waterLevel";
     waterLevel["label"] = "Water Level";
     waterLevel["type"] = "number";
-    waterLevel["value"] = currentWaterLevel;
+    waterLevel["value"] = telemetryHandler.getWaterLevel();
+
+    // Distance
+    JsonObject distance = doc.createNestedObject("distance");
+    distance["key"] = "distance";
+    distance["label"] = "Distance";
+    distance["type"] = "number";
+    distance["value"] = telemetryHandler.getDistance();
 
     // Current Inflow
     JsonObject currInflow = doc.createNestedObject("currInflow");
     currInflow["key"] = "currInflow";
     currInflow["label"] = "Current Inflow";
     currInflow["type"] = "number";
-    currInflow["value"] = currentInflow;
+    currInflow["value"] = telemetryHandler.getCurrInflow();
 
     // Pump Status
     JsonObject pumpStatus = doc.createNestedObject("pumpStatus");
     pumpStatus["key"] = "pumpStatus";
     pumpStatus["label"] = "Pump Status";
     pumpStatus["type"] = "number";
-    pumpStatus["value"] = currentPumpStatus;
+    pumpStatus["value"] = telemetryHandler.getPumpStatus();
 
-    // Device Status (always 1 for online, updated by backend based on heartbeat)
+    // Device Status (always 1 for online when responding)
     JsonObject status = doc.createNestedObject("Status");
     status["key"] = "Status";
     status["label"] = "Device Status";
     status["type"] = "number";
-    status["value"] = 1;
+    status["value"] = telemetryHandler.getIsOnline();
+
+    // Timestamp
+    doc["timestamp"] = (unsigned long)telemetryHandler.getTimestamp();
 
     String response;
     serializeJson(doc, response);
@@ -330,11 +340,7 @@ void WebServer::handleGetControl(AsyncWebServerRequest* request) {
 void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
                                    size_t len, size_t index, size_t total) {
     // POST /{device_id}/control - Update control data from app
-    // Implements the same 3-rule logic as config sync:
-    // RULE 1: lastModified == 0 → Always update (priority flag, if value differs)
-    // RULE 2: Value unchanged → Skip update (even if timestamp differs)
-    // RULE 3: Value changed → Compare timestamps (Last-Write-Wins)
-
+    // Uses 3-way sync handlers: updateFromLocal() → merge() → apply
     Serial.println("[WebServer] POST /" + deviceId + "/control - Control update from app");
 
     // Accumulate full request body
@@ -365,200 +371,85 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
         return;
     }
 
-    // Extract incoming control values and timestamps
-    ControlData incomingControl = controlData;  // Start with current values
-    bool hasPriorityFlag = false;
-    bool hasPumpSwitchInRequest = false;  // Track if pumpSwitch field was sent
-    bool hasConfigUpdateInRequest = false;  // Track if config_update field was sent
-    bool pumpValueChanged = false;
-    bool configValueChanged = false;
+    // Extract values and timestamps from app
+    bool hasPumpSwitch = doc.containsKey("pumpSwitch");
+    bool hasConfigUpdate = doc.containsKey("config_update");
 
-    // Parse pumpSwitch field
-    if (doc.containsKey("pumpSwitch")) {
-        hasPumpSwitchInRequest = true;  // Field was sent in request
-        bool newPumpSwitch = doc["pumpSwitch"]["value"] | controlData.pumpSwitch;
-        uint64_t pumpTs = doc["pumpSwitch"]["lastModified"] | (uint64_t)0;
+    bool pumpSwitchValue = false;
+    uint64_t pumpSwitchTs = 0;
+    bool configUpdateValue = false;
+    uint64_t configUpdateTs = 0;
 
-        if (pumpTs == 0) hasPriorityFlag = true;
-
-        incomingControl.pumpSwitch = newPumpSwitch;
-        incomingControl.pumpSwitchLastModified = pumpTs;
-
-        if (newPumpSwitch != controlData.pumpSwitch) {
-            pumpValueChanged = true;
-        }
+    if (hasPumpSwitch) {
+        pumpSwitchValue = doc["pumpSwitch"]["value"] | false;
+        pumpSwitchTs = doc["pumpSwitch"]["lastModified"] | (uint64_t)0;
     }
 
-    // Parse config_update field
-    if (doc.containsKey("config_update")) {
-        hasConfigUpdateInRequest = true;  // Field was sent in request
-        bool newConfigUpdate = doc["config_update"]["value"] | controlData.config_update;
-        uint64_t configTs = doc["config_update"]["lastModified"] | (uint64_t)0;
-
-        if (configTs == 0) hasPriorityFlag = true;
-
-        incomingControl.config_update = newConfigUpdate;
-        incomingControl.configUpdateLastModified = configTs;
-
-        if (newConfigUpdate != controlData.config_update) {
-            configValueChanged = true;
-        }
+    if (hasConfigUpdate) {
+        configUpdateValue = doc["config_update"]["value"] | false;
+        configUpdateTs = doc["config_update"]["lastModified"] | (uint64_t)0;
     }
 
-    // ✅ SERVER RULE 2: Value unchanged → Skip update (but still trigger pump callback!)
-    if (!pumpValueChanged && !configValueChanged) {
-        Serial.println("[WebServer] Control values identical - updating timestamps only");
+    // Update handler with values from Local (app webserver)
+    if (hasPumpSwitch || hasConfigUpdate) {
+        // Get current values to preserve fields not in request
+        bool currentPump = hasPumpSwitch ? pumpSwitchValue : controlHandler.getPumpSwitch();
+        bool currentConfig = hasConfigUpdate ? configUpdateValue : controlHandler.getConfigUpdate();
+        uint64_t currentPumpTs = hasPumpSwitch ? pumpSwitchTs : controlHandler.getPumpSwitchTimestamp();
+        uint64_t currentConfigTs = hasConfigUpdate ? configUpdateTs : controlHandler.getConfigUpdateTimestamp();
 
-        // Even if values are identical, trigger pump callback if app sent pump command
-        // This ensures pump is physically controlled even if value didn't change
-        if (hasPumpSwitchInRequest && pumpCallback != nullptr) {
-            Serial.println("[WebServer] Triggering pump callback (value unchanged, app command received)");
-            pumpCallback(incomingControl.pumpSwitch);
-        }
-
-        StaticJsonDocument<512> responseDoc;
-        responseDoc["success"] = true;
-        responseDoc["message"] = "Values identical - callback triggered";
-
-        String response;
-        serializeJson(responseDoc, response);
-        request->send(200, "application/json", response);
-        jsonBuffer = "";
-        return;
+        controlHandler.updateFromLocal(currentPump, currentPumpTs, currentConfig, currentConfigTs);
     }
 
-    // ✅ SERVER RULE 1: lastModified == 0 → Always update (priority flag)
-    if (hasPriorityFlag) {
-        Serial.println("[WebServer] Priority flag detected - accepting app control");
+    // Perform 3-way merge (API vs Local vs Self)
+    bool changed = controlHandler.merge();
 
-        controlData = incomingControl;
+    // Trigger pump callback with merged value
+    if (hasPumpSwitch && pumpCallback != nullptr) {
+        bool mergedPumpValue = controlHandler.getPumpSwitch();
+        Serial.printf("[WebServer] Applying pump control: %s\n", mergedPumpValue ? "ON" : "OFF");
+        pumpCallback(mergedPumpValue);
+    }
 
-        // Assign new timestamp
-        if (apiClient != nullptr) {
-            if (hasPumpSwitchInRequest) {
-                controlData.pumpSwitchLastModified = apiClient->getCurrentTimestamp();
-            }
-            if (hasConfigUpdateInRequest) {
-                controlData.configUpdateLastModified = apiClient->getCurrentTimestamp();
-            }
+    // Also update old controlData for backward compatibility
+    controlData.pumpSwitch = controlHandler.getPumpSwitch();
+    controlData.pumpSwitchLastModified = controlHandler.getPumpSwitchTimestamp();
+    controlData.config_update = controlHandler.getConfigUpdate();
+    controlData.configUpdateLastModified = controlHandler.getConfigUpdateTimestamp();
+
+    Serial.println("[WebServer] Control updated from app (Local):");
+    Serial.println("  Pump Switch: " + String(controlHandler.getPumpSwitch()));
+    Serial.println("  Config Update: " + String(controlHandler.getConfigUpdate()));
+    if (changed) {
+        Serial.println("  Merge result: Values changed after 3-way merge");
+    }
+
+    // Immediately sync merged control data to server (if authenticated)
+    if (apiClient != nullptr && apiClient->isAuthenticated()) {
+        Serial.println("[WebServer] Uploading merged control data to server...");
+        if (apiClient->uploadControl(controlData)) {
+            Serial.println("[WebServer] Control data synced to server successfully");
         } else {
-            if (hasPumpSwitchInRequest) {
-                controlData.pumpSwitchLastModified = millis();
-            }
-            if (hasConfigUpdateInRequest) {
-                controlData.configUpdateLastModified = millis();
-            }
-        }
-
-        Serial.println("[WebServer] Control updated from app (priority)");
-        Serial.println("  Pump Switch: " + String(controlData.pumpSwitch));
-        Serial.println("  Config Update: " + String(controlData.config_update));
-
-        // ALWAYS trigger pump callback when app sends pump command (even if value unchanged)
-        // This ensures pump is physically controlled even if value didn't change
-        if (hasPumpSwitchInRequest && pumpCallback != nullptr) {
-            Serial.println("[WebServer] Triggering pump callback (value " +
-                         String(pumpValueChanged ? "changed" : "unchanged") + ")");
-            pumpCallback(controlData.pumpSwitch);
-        }
-
-        // Immediately sync control data to server (if authenticated)
-        if (apiClient != nullptr && apiClient->isAuthenticated()) {
-            Serial.println("[WebServer] Uploading control data to server...");
-            if (apiClient->uploadControl(controlData)) {
-                Serial.println("[WebServer] Control data synced to server successfully");
-            } else {
-                Serial.println("[WebServer] WARNING: Failed to sync control data to server");
-            }
-        }
-
-        // Send success response immediately
-        StaticJsonDocument<512> responseDoc;
-        responseDoc["success"] = true;
-        responseDoc["message"] = "Control updated and synced to server";
-
-        String response;
-        serializeJson(responseDoc, response);
-        request->send(200, "application/json", response);
-        jsonBuffer = "";
-        return;
-    }
-
-    // ✅ SERVER RULE 3: Value changed → Last-Write-Wins (per field)
-    bool acceptedUpdate = false;
-    bool pumpUpdateAccepted = false;
-
-    // Check pumpSwitch timestamp
-    if (hasPumpSwitchInRequest) {
-        if (incomingControl.pumpSwitchLastModified > controlData.pumpSwitchLastModified) {
-            Serial.println("[WebServer] Pump switch timestamp newer - accepting update");
-
-            controlData.pumpSwitch = incomingControl.pumpSwitch;
-            controlData.pumpSwitchLastModified = incomingControl.pumpSwitchLastModified;
-            acceptedUpdate = true;
-            pumpUpdateAccepted = true;
-        } else {
-            Serial.println("[WebServer] Pump switch timestamp older - rejecting");
+            Serial.println("[WebServer] WARNING: Failed to sync control data to server");
         }
     }
 
-    // Check config_update timestamp
-    if (hasConfigUpdateInRequest) {
-        if (incomingControl.configUpdateLastModified > controlData.configUpdateLastModified) {
-            Serial.println("[WebServer] Config update timestamp newer - accepting update");
+    // Send success response with merged values
+    StaticJsonDocument<512> responseDoc;
+    responseDoc["success"] = true;
+    responseDoc["message"] = "Control updated and synced";
 
-            controlData.config_update = incomingControl.config_update;
-            controlData.configUpdateLastModified = incomingControl.configUpdateLastModified;
-            acceptedUpdate = true;
-        } else {
-            Serial.println("[WebServer] Config update timestamp older - rejecting");
-        }
-    }
+    JsonObject pumpSwitchResp = responseDoc.createNestedObject("pumpSwitch");
+    pumpSwitchResp["value"] = controlHandler.getPumpSwitch();
+    pumpSwitchResp["lastModified"] = (unsigned long)controlHandler.getPumpSwitchTimestamp();
 
-    if (acceptedUpdate) {
-        Serial.println("[WebServer] Control updated from app (LWW)");
-        Serial.println("  Pump Switch: " + String(controlData.pumpSwitch));
-        Serial.println("  Config Update: " + String(controlData.config_update));
+    JsonObject configUpdateResp = responseDoc.createNestedObject("config_update");
+    configUpdateResp["value"] = controlHandler.getConfigUpdate();
+    configUpdateResp["lastModified"] = (unsigned long)controlHandler.getConfigUpdateTimestamp();
 
-        // ALWAYS trigger pump callback when pump update is accepted (even if value unchanged)
-        // This ensures the pump is physically controlled even if a previous update failed
-        if (pumpUpdateAccepted && pumpCallback != nullptr) {
-            Serial.println("[WebServer] Triggering pump control callback (value " +
-                         String(pumpValueChanged ? "changed" : "unchanged") + ")");
-            pumpCallback(controlData.pumpSwitch);
-        }
-
-        // Immediately sync control data to server (if authenticated)
-        if (apiClient != nullptr && apiClient->isAuthenticated()) {
-            Serial.println("[WebServer] Uploading control data to server...");
-            if (apiClient->uploadControl(controlData)) {
-                Serial.println("[WebServer] Control data synced to server successfully");
-            } else {
-                Serial.println("[WebServer] WARNING: Failed to sync control data to server");
-            }
-        }
-
-        // Send success response
-        StaticJsonDocument<512> responseDoc;
-        responseDoc["success"] = true;
-        responseDoc["message"] = "Control updated and synced to server";
-
-        String response;
-        serializeJson(responseDoc, response);
-        request->send(200, "application/json", response);
-    } else {
-        Serial.println("[WebServer] All timestamps older - rejecting update");
-
-        // Send rejection response
-        StaticJsonDocument<512> responseDoc;
-        responseDoc["success"] = false;
-        responseDoc["error"] = "STALE_TIMESTAMP";
-        responseDoc["message"] = "Current control data is newer";
-
-        String response;
-        serializeJson(responseDoc, response);
-        request->send(409, "application/json", response);  // 409 Conflict
-    }
+    String response;
+    serializeJson(responseDoc, response);
+    request->send(200, "application/json", response);
 
     jsonBuffer = "";
 }
@@ -575,32 +466,32 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     upperThreshold["key"] = "upperThreshold";
     upperThreshold["label"] = "Upper Threshold";
     upperThreshold["type"] = "number";
-    upperThreshold["lastModified"] = deviceConfig.upperThresholdLastModified;
-    upperThreshold["value"] = deviceConfig.upperThreshold;
+    upperThreshold["lastModified"] = (unsigned long)configHandler.getUpperThresholdTimestamp();
+    upperThreshold["value"] = configHandler.getUpperThreshold();
 
     // Lower Threshold
     JsonObject lowerThreshold = doc.createNestedObject("lowerThreshold");
     lowerThreshold["key"] = "lowerThreshold";
     lowerThreshold["label"] = "Lower Threshold";
     lowerThreshold["type"] = "number";
-    lowerThreshold["lastModified"] = deviceConfig.lowerThresholdLastModified;
-    lowerThreshold["value"] = deviceConfig.lowerThreshold;
+    lowerThreshold["lastModified"] = (unsigned long)configHandler.getLowerThresholdTimestamp();
+    lowerThreshold["value"] = configHandler.getLowerThreshold();
 
     // Tank Height
     JsonObject tankHeight = doc.createNestedObject("tankHeight");
     tankHeight["key"] = "tankHeight";
     tankHeight["label"] = "Tank Height";
     tankHeight["type"] = "number";
-    tankHeight["lastModified"] = deviceConfig.tankHeightLastModified;
-    tankHeight["value"] = deviceConfig.tankHeight;
+    tankHeight["lastModified"] = (unsigned long)configHandler.getTankHeightTimestamp();
+    tankHeight["value"] = configHandler.getTankHeight();
 
     // Tank Width
     JsonObject tankWidth = doc.createNestedObject("tankWidth");
     tankWidth["key"] = "tankWidth";
     tankWidth["label"] = "Tank Width";
     tankWidth["type"] = "number";
-    tankWidth["lastModified"] = deviceConfig.tankWidthLastModified;
-    tankWidth["value"] = deviceConfig.tankWidth;
+    tankWidth["lastModified"] = (unsigned long)configHandler.getTankWidthTimestamp();
+    tankWidth["value"] = configHandler.getTankWidth();
 
     // Tank Shape
     JsonObject tankShape = doc.createNestedObject("tankShape");
@@ -610,54 +501,54 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     JsonArray tankShapeOptions = tankShape.createNestedArray("options");
     tankShapeOptions.add("Cylindrical");
     tankShapeOptions.add("Rectangular");
-    tankShape["lastModified"] = deviceConfig.tankShapeLastModified;
-    tankShape["value"] = deviceConfig.tankShape;
+    tankShape["lastModified"] = (unsigned long)configHandler.getTankShapeTimestamp();
+    tankShape["value"] = configHandler.getTankShape();
 
     // Used Total
     JsonObject usedTotal = doc.createNestedObject("UsedTotal");
     usedTotal["key"] = "UsedTotal";
     usedTotal["label"] = "Total Water Used";
     usedTotal["type"] = "number";
-    usedTotal["lastModified"] = deviceConfig.usedTotalLastModified;
-    usedTotal["value"] = deviceConfig.usedTotal;
+    usedTotal["lastModified"] = (unsigned long)configHandler.getUsedTotalTimestamp();
+    usedTotal["value"] = configHandler.getUsedTotal();
 
     // Max Inflow
     JsonObject maxInflow = doc.createNestedObject("maxInflow");
     maxInflow["key"] = "maxInflow";
     maxInflow["label"] = "Max Inflow";
     maxInflow["type"] = "number";
-    maxInflow["lastModified"] = deviceConfig.maxInflowLastModified;
-    maxInflow["value"] = deviceConfig.maxInflow;
+    maxInflow["lastModified"] = (unsigned long)configHandler.getMaxInflowTimestamp();
+    maxInflow["value"] = configHandler.getMaxInflow();
 
     // Force Update
     JsonObject force_update = doc.createNestedObject("force_update");
     force_update["key"] = "force_update";
     force_update["label"] = "Force Firmware Update";
     force_update["type"] = "boolean";
-    force_update["value"] = deviceConfig.force_update;
+    force_update["value"] = configHandler.getForceUpdate();
     force_update["description"] = "When enabled, device will force download and install firmware update";
     force_update["system"] = true;
     force_update["hidden"] = false;
-    force_update["lastModified"] = deviceConfig.forceUpdateLastModified;
+    force_update["lastModified"] = (unsigned long)configHandler.getForceUpdateTimestamp();
 
     // Sensor Filter
     JsonObject sensorFilter = doc.createNestedObject("sensorFilter");
     sensorFilter["key"] = "sensorFilter";
     sensorFilter["label"] = "Sensor Filter";
     sensorFilter["type"] = "boolean";
-    sensorFilter["value"] = deviceConfig.sensorFilter;
+    sensorFilter["value"] = configHandler.getSensorFilter();
     sensorFilter["description"] = "Enable/disable sensor filtering and smoothing for more stable readings";
-    sensorFilter["lastModified"] = deviceConfig.sensorFilterLastModified;
+    sensorFilter["lastModified"] = (unsigned long)configHandler.getSensorFilterTimestamp();
 
     // IP Address
     JsonObject ipAddress = doc.createNestedObject("ip_address");
     ipAddress["key"] = "ip_address";
     ipAddress["label"] = "Device Local IP Address";
     ipAddress["type"] = "string";
-    ipAddress["value"] = deviceConfig.ipAddress;
+    ipAddress["value"] = configHandler.getIpAddress();
     ipAddress["description"] = "Local IP address of the device for offline app communication via webserver";
     ipAddress["system"] = true;
-    ipAddress["lastModified"] = deviceConfig.ipAddressLastModified;
+    ipAddress["lastModified"] = (unsigned long)configHandler.getIpAddressTimestamp();
 
     String response;
     serializeJson(doc, response);
@@ -670,10 +561,7 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
 void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* data,
                                        size_t len, size_t index, size_t total) {
     // POST /{device_id}/config - Update device configuration from app
-    // Implements the same 3-rule logic as server sync:
-    // RULE 1: lastModified == 0 → Always update (priority flag, if value differs)
-    // RULE 2: Value unchanged → Skip update (even if timestamp differs)
-    // RULE 3: Value changed → Compare timestamps (Last-Write-Wins)
+    // Uses 3-way merge (API vs Local vs Self)
 
     Serial.println("[WebServer] POST /" + deviceId + "/config - Config update from app");
 
@@ -705,156 +593,103 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
         return;
     }
 
-    // Extract incoming config values with per-field timestamps
-    DeviceConfig incomingConfig = deviceConfig;  // Start with current config
-    bool hasPriorityFlag = false;
+    DEBUG_RESPONSE_WS_PRINTLN("[WebServer] Received config JSON from app:");
+    DEBUG_RESPONSE_WS_PRINTLN(jsonBuffer);
 
-    // Parse nested JSON structure with per-field timestamps
-    if (doc.containsKey("upperThreshold")) {
-        incomingConfig.upperThreshold = doc["upperThreshold"]["value"] | deviceConfig.upperThreshold;
-        incomingConfig.upperThresholdLastModified = doc["upperThreshold"]["lastModified"] | (uint64_t)0;
-        if (incomingConfig.upperThresholdLastModified == 0) hasPriorityFlag = true;
-    }
-    if (doc.containsKey("lowerThreshold")) {
-        incomingConfig.lowerThreshold = doc["lowerThreshold"]["value"] | deviceConfig.lowerThreshold;
-        incomingConfig.lowerThresholdLastModified = doc["lowerThreshold"]["lastModified"] | (uint64_t)0;
-        if (incomingConfig.lowerThresholdLastModified == 0) hasPriorityFlag = true;
-    }
-    if (doc.containsKey("tankHeight")) {
-        incomingConfig.tankHeight = doc["tankHeight"]["value"] | deviceConfig.tankHeight;
-        incomingConfig.tankHeightLastModified = doc["tankHeight"]["lastModified"] | (uint64_t)0;
-        if (incomingConfig.tankHeightLastModified == 0) hasPriorityFlag = true;
-    }
-    if (doc.containsKey("tankWidth")) {
-        incomingConfig.tankWidth = doc["tankWidth"]["value"] | deviceConfig.tankWidth;
-        incomingConfig.tankWidthLastModified = doc["tankWidth"]["lastModified"] | (uint64_t)0;
-        if (incomingConfig.tankWidthLastModified == 0) hasPriorityFlag = true;
-    }
-    if (doc.containsKey("tankShape")) {
-        incomingConfig.tankShape = doc["tankShape"]["value"] | deviceConfig.tankShape;
-        incomingConfig.tankShapeLastModified = doc["tankShape"]["lastModified"] | (uint64_t)0;
-        if (incomingConfig.tankShapeLastModified == 0) hasPriorityFlag = true;
-    }
-    if (doc.containsKey("UsedTotal")) {
-        incomingConfig.usedTotal = doc["UsedTotal"]["value"] | deviceConfig.usedTotal;
-        incomingConfig.usedTotalLastModified = doc["UsedTotal"]["lastModified"] | (uint64_t)0;
-        if (incomingConfig.usedTotalLastModified == 0) hasPriorityFlag = true;
-    }
-    if (doc.containsKey("maxInflow")) {
-        incomingConfig.maxInflow = doc["maxInflow"]["value"] | deviceConfig.maxInflow;
-        incomingConfig.maxInflowLastModified = doc["maxInflow"]["lastModified"] | (uint64_t)0;
-        if (incomingConfig.maxInflowLastModified == 0) hasPriorityFlag = true;
-    }
-    if (doc.containsKey("force_update")) {
-        incomingConfig.force_update = doc["force_update"]["value"] | deviceConfig.force_update;
-        incomingConfig.forceUpdateLastModified = doc["force_update"]["lastModified"] | (uint64_t)0;
-        if (incomingConfig.forceUpdateLastModified == 0) hasPriorityFlag = true;
-    }
-    if (doc.containsKey("sensorFilter")) {
-        incomingConfig.sensorFilter = doc["sensorFilter"]["value"] | deviceConfig.sensorFilter;
-        incomingConfig.sensorFilterLastModified = doc["sensorFilter"]["lastModified"] | (uint64_t)0;
-        if (incomingConfig.sensorFilterLastModified == 0) hasPriorityFlag = true;
-    }
-    if (doc.containsKey("ip_address")) {
-        incomingConfig.ipAddress = doc["ip_address"]["value"] | deviceConfig.ipAddress;
-        incomingConfig.ipAddressLastModified = doc["ip_address"]["lastModified"] | (uint64_t)0;
-        if (incomingConfig.ipAddressLastModified == 0) hasPriorityFlag = true;
-    }
+    // Extract all 10 config fields with timestamps
+    float localUpperThreshold = doc["upperThreshold"]["value"] | configHandler.getUpperThreshold();
+    uint64_t localUpperThresholdTs = doc["upperThreshold"]["lastModified"] | (uint64_t)0;
 
-    // ✅ SERVER RULE 2: Value unchanged → Skip update
-    bool valuesChanged = false;
-    if (incomingConfig.upperThreshold != deviceConfig.upperThreshold) valuesChanged = true;
-    if (incomingConfig.lowerThreshold != deviceConfig.lowerThreshold) valuesChanged = true;
-    if (incomingConfig.tankHeight != deviceConfig.tankHeight) valuesChanged = true;
-    if (incomingConfig.tankWidth != deviceConfig.tankWidth) valuesChanged = true;
-    if (incomingConfig.tankShape != deviceConfig.tankShape) valuesChanged = true;
-    if (incomingConfig.usedTotal != deviceConfig.usedTotal) valuesChanged = true;
-    if (incomingConfig.maxInflow != deviceConfig.maxInflow) valuesChanged = true;
-    if (incomingConfig.force_update != deviceConfig.force_update) valuesChanged = true;
-    if (incomingConfig.sensorFilter != deviceConfig.sensorFilter) valuesChanged = true;
-    if (incomingConfig.ipAddress != deviceConfig.ipAddress) valuesChanged = true;
+    float localLowerThreshold = doc["lowerThreshold"]["value"] | configHandler.getLowerThreshold();
+    uint64_t localLowerThresholdTs = doc["lowerThreshold"]["lastModified"] | (uint64_t)0;
 
-    if (!valuesChanged) {
-        // Values identical - skip update
-        Serial.println("[WebServer] Config values identical - skipping update");
+    float localTankHeight = doc["tankHeight"]["value"] | configHandler.getTankHeight();
+    uint64_t localTankHeightTs = doc["tankHeight"]["lastModified"] | (uint64_t)0;
 
-        StaticJsonDocument<512> responseDoc;
-        responseDoc["success"] = true;
-        responseDoc["message"] = "No changes - values identical";
+    float localTankWidth = doc["tankWidth"]["value"] | configHandler.getTankWidth();
+    uint64_t localTankWidthTs = doc["tankWidth"]["lastModified"] | (uint64_t)0;
 
-        String response;
-        serializeJson(responseDoc, response);
-        request->send(200, "application/json", response);
-        jsonBuffer = "";
-        return;
+    String localTankShape = doc["tankShape"]["value"] | configHandler.getTankShape();
+    uint64_t localTankShapeTs = doc["tankShape"]["lastModified"] | (uint64_t)0;
+
+    float localUsedTotal = doc["UsedTotal"]["value"] | configHandler.getUsedTotal();
+    uint64_t localUsedTotalTs = doc["UsedTotal"]["lastModified"] | (uint64_t)0;
+
+    float localMaxInflow = doc["maxInflow"]["value"] | configHandler.getMaxInflow();
+    uint64_t localMaxInflowTs = doc["maxInflow"]["lastModified"] | (uint64_t)0;
+
+    bool localForceUpdate = doc["force_update"]["value"] | configHandler.getForceUpdate();
+    uint64_t localForceUpdateTs = doc["force_update"]["lastModified"] | (uint64_t)0;
+
+    bool localSensorFilter = doc["sensorFilter"]["value"] | configHandler.getSensorFilter();
+    uint64_t localSensorFilterTs = doc["sensorFilter"]["lastModified"] | (uint64_t)0;
+
+    String localIpAddress = doc["ip_address"]["value"] | configHandler.getIpAddress();
+    uint64_t localIpAddressTs = doc["ip_address"]["lastModified"] | (uint64_t)0;
+
+    // Update handler with values from Local (app webserver)
+    configHandler.updateFromLocal(
+        localUpperThreshold, localUpperThresholdTs,
+        localLowerThreshold, localLowerThresholdTs,
+        localTankHeight, localTankHeightTs,
+        localTankWidth, localTankWidthTs,
+        localTankShape, localTankShapeTs,
+        localUsedTotal, localUsedTotalTs,
+        localMaxInflow, localMaxInflowTs,
+        localForceUpdate, localForceUpdateTs,
+        localSensorFilter, localSensorFilterTs,
+        localIpAddress, localIpAddressTs
+    );
+
+    // Perform 3-way merge (API vs Local vs Self)
+    bool changed = configHandler.merge();
+
+    // Update old deviceConfig for backward compatibility
+    deviceConfig.upperThreshold = configHandler.getUpperThreshold();
+    deviceConfig.upperThresholdLastModified = configHandler.getUpperThresholdTimestamp();
+    deviceConfig.lowerThreshold = configHandler.getLowerThreshold();
+    deviceConfig.lowerThresholdLastModified = configHandler.getLowerThresholdTimestamp();
+    deviceConfig.tankHeight = configHandler.getTankHeight();
+    deviceConfig.tankHeightLastModified = configHandler.getTankHeightTimestamp();
+    deviceConfig.tankWidth = configHandler.getTankWidth();
+    deviceConfig.tankWidthLastModified = configHandler.getTankWidthTimestamp();
+    deviceConfig.tankShape = configHandler.getTankShape();
+    deviceConfig.tankShapeLastModified = configHandler.getTankShapeTimestamp();
+    deviceConfig.usedTotal = configHandler.getUsedTotal();
+    deviceConfig.usedTotalLastModified = configHandler.getUsedTotalTimestamp();
+    deviceConfig.maxInflow = configHandler.getMaxInflow();
+    deviceConfig.maxInflowLastModified = configHandler.getMaxInflowTimestamp();
+    deviceConfig.force_update = configHandler.getForceUpdate();
+    deviceConfig.forceUpdateLastModified = configHandler.getForceUpdateTimestamp();
+    deviceConfig.sensorFilter = configHandler.getSensorFilter();
+    deviceConfig.sensorFilterLastModified = configHandler.getSensorFilterTimestamp();
+    deviceConfig.ipAddress = configHandler.getIpAddress();
+    deviceConfig.ipAddressLastModified = configHandler.getIpAddressTimestamp();
+
+    Serial.println("[WebServer] Config updated from app (Local):");
+    Serial.println("  Upper Threshold: " + String(configHandler.getUpperThreshold()));
+    Serial.println("  Lower Threshold: " + String(configHandler.getLowerThreshold()));
+    Serial.println("  Tank Height: " + String(configHandler.getTankHeight()));
+    Serial.println("  Tank Width: " + String(configHandler.getTankWidth()));
+    if (changed) {
+        Serial.println("  Merge result: Values changed after 3-way merge");
     }
 
-    // ✅ SERVER RULE 1: lastModified == 0 → Always update (priority flag)
-    if (hasPriorityFlag) {
-        Serial.println("[WebServer] Priority flag detected - accepting app config");
-        deviceConfig = incomingConfig;
-
-        // Assign new timestamp to ALL fields
-        uint64_t currentTimestamp;
-        if (apiClient != nullptr) {
-            currentTimestamp = apiClient->getCurrentTimestamp();
-        } else {
-            currentTimestamp = millis();  // Fallback to millis
-        }
-
-        // Update all field timestamps
-        deviceConfig.upperThresholdLastModified = currentTimestamp;
-        deviceConfig.lowerThresholdLastModified = currentTimestamp;
-        deviceConfig.tankHeightLastModified = currentTimestamp;
-        deviceConfig.tankWidthLastModified = currentTimestamp;
-        deviceConfig.tankShapeLastModified = currentTimestamp;
-        deviceConfig.usedTotalLastModified = currentTimestamp;
-        deviceConfig.maxInflowLastModified = currentTimestamp;
-        deviceConfig.forceUpdateLastModified = currentTimestamp;
-        deviceConfig.sensorFilterLastModified = currentTimestamp;
-        deviceConfig.ipAddressLastModified = currentTimestamp;
-
-        // Mark as locally modified (sets device_config_sync_status = false)
-        if (apiClient != nullptr) {
-            apiClient->markConfigModified();
-        }
-
-        // Trigger immediate sync callback
-        if (configSyncCallback != nullptr) {
-            Serial.println("[WebServer] Triggering immediate config sync...");
-            configSyncCallback();
-        }
-
-        Serial.println("[WebServer] Config updated from app (priority)");
-        Serial.println("  Upper Threshold: " + String(deviceConfig.upperThreshold));
-        Serial.println("  Lower Threshold: " + String(deviceConfig.lowerThreshold));
-
-        // Send success response immediately (don't block on server sync)
-        // The heartbeat will handle syncing to server asynchronously
-        StaticJsonDocument<512> responseDoc;
-        responseDoc["success"] = true;
-        responseDoc["message"] = "Config updated (will sync to server on next heartbeat)";
-
-        String response;
-        serializeJson(responseDoc, response);
-        request->send(200, "application/json", response);
-        jsonBuffer = "";
-        return;
+    // Trigger config sync callback if provided
+    if (configSyncCallback != nullptr && changed) {
+        Serial.println("[WebServer] Triggering config sync callback...");
+        configSyncCallback();
     }
 
-    // ✅ No other paths: Config must have priority flag (lastModified=0)
-    // The app always sends config with priority flag for local updates
-    // Per-field LWW is too complex for config (unlike control data)
-    Serial.println("[WebServer] Config update rejected - no priority flag");
-
+    // Send success response with merged values
     StaticJsonDocument<512> responseDoc;
-    responseDoc["success"] = false;
-    responseDoc["error"] = "PRIORITY_REQUIRED";
-    responseDoc["message"] = "Config updates require priority flag (lastModified=0)";
+    responseDoc["success"] = true;
+    responseDoc["message"] = "Config updated and synced";
 
     String response;
     serializeJson(responseDoc, response);
-    request->send(400, "application/json", response);
+    request->send(200, "application/json", response);
+
     jsonBuffer = "";
 }
 

@@ -1,5 +1,13 @@
 #include "api_client.h"
 #include "storage_manager.h"
+#include "handle_control_data.h"
+#include "handle_config_data.h"
+#include "handle_telemetry_data.h"
+
+// External handler instances (defined in main.cpp)
+extern ControlDataHandler controlHandler;
+extern ConfigDataHandler configHandler;
+extern TelemetryDataHandler telemetryHandler;
 
 // Initialize static instance pointer
 APIClient* APIClient::instance = nullptr;
@@ -444,33 +452,73 @@ bool APIClient::fetchAndApplyServerConfig(DeviceConfig& config) {
         return false;
     }
 
-    // Delegate to device config manager
-    bool result = deviceConfigManager.fetchAndApplyServerConfig(config);
+    // Fetch config from server
+    DeviceConfig apiConfig;
+    bool result = deviceConfigManager.fetchAndApplyServerConfig(apiConfig);
 
-    // If config was fetched from direct format endpoint (no per-field timestamps),
-    // use current server time for all fields (only if time is synced)
-    // Note: This happens regardless of whether values changed (result true/false)
-    if (isTimeSynced()) {
-        uint64_t currentTime = getCurrentTimestamp();
-        bool anyZero = false;
-
-        if (config.upperThresholdLastModified == 0) { config.upperThresholdLastModified = currentTime; anyZero = true; }
-        if (config.lowerThresholdLastModified == 0) { config.lowerThresholdLastModified = currentTime; anyZero = true; }
-        if (config.tankHeightLastModified == 0) { config.tankHeightLastModified = currentTime; anyZero = true; }
-        if (config.tankWidthLastModified == 0) { config.tankWidthLastModified = currentTime; anyZero = true; }
-        if (config.tankShapeLastModified == 0) { config.tankShapeLastModified = currentTime; anyZero = true; }
-        if (config.usedTotalLastModified == 0) { config.usedTotalLastModified = currentTime; anyZero = true; }
-        if (config.maxInflowLastModified == 0) { config.maxInflowLastModified = currentTime; anyZero = true; }
-        if (config.forceUpdateLastModified == 0) { config.forceUpdateLastModified = currentTime; anyZero = true; }
-        if (config.sensorFilterLastModified == 0) { config.sensorFilterLastModified = currentTime; anyZero = true; }
-        if (config.ipAddressLastModified == 0) { config.ipAddressLastModified = currentTime; anyZero = true; }
-
-        if (anyZero) {
-            DEBUG_PRINTF("[API] Set missing field timestamps to current server time: %llu\n", currentTime);
-        }
+    if (!result) {
+        return false;
     }
 
-    return result;
+    // If config was fetched without timestamps, use current server time
+    if (isTimeSynced()) {
+        uint64_t currentTime = getCurrentTimestamp();
+        if (apiConfig.upperThresholdLastModified == 0) apiConfig.upperThresholdLastModified = currentTime;
+        if (apiConfig.lowerThresholdLastModified == 0) apiConfig.lowerThresholdLastModified = currentTime;
+        if (apiConfig.tankHeightLastModified == 0) apiConfig.tankHeightLastModified = currentTime;
+        if (apiConfig.tankWidthLastModified == 0) apiConfig.tankWidthLastModified = currentTime;
+        if (apiConfig.tankShapeLastModified == 0) apiConfig.tankShapeLastModified = currentTime;
+        if (apiConfig.usedTotalLastModified == 0) apiConfig.usedTotalLastModified = currentTime;
+        if (apiConfig.maxInflowLastModified == 0) apiConfig.maxInflowLastModified = currentTime;
+        if (apiConfig.forceUpdateLastModified == 0) apiConfig.forceUpdateLastModified = currentTime;
+        if (apiConfig.sensorFilterLastModified == 0) apiConfig.sensorFilterLastModified = currentTime;
+        if (apiConfig.ipAddressLastModified == 0) apiConfig.ipAddressLastModified = currentTime;
+    }
+
+    // Update handler with API values
+    configHandler.updateFromAPI(
+        apiConfig.upperThreshold, apiConfig.upperThresholdLastModified,
+        apiConfig.lowerThreshold, apiConfig.lowerThresholdLastModified,
+        apiConfig.tankHeight, apiConfig.tankHeightLastModified,
+        apiConfig.tankWidth, apiConfig.tankWidthLastModified,
+        apiConfig.tankShape, apiConfig.tankShapeLastModified,
+        apiConfig.usedTotal, apiConfig.usedTotalLastModified,
+        apiConfig.maxInflow, apiConfig.maxInflowLastModified,
+        apiConfig.force_update, apiConfig.forceUpdateLastModified,
+        apiConfig.sensorFilter, apiConfig.sensorFilterLastModified,
+        apiConfig.ipAddress, apiConfig.ipAddressLastModified
+    );
+
+    // Perform 3-way merge
+    bool changed = configHandler.merge();
+
+    // Return merged values
+    config.upperThreshold = configHandler.getUpperThreshold();
+    config.upperThresholdLastModified = configHandler.getUpperThresholdTimestamp();
+    config.lowerThreshold = configHandler.getLowerThreshold();
+    config.lowerThresholdLastModified = configHandler.getLowerThresholdTimestamp();
+    config.tankHeight = configHandler.getTankHeight();
+    config.tankHeightLastModified = configHandler.getTankHeightTimestamp();
+    config.tankWidth = configHandler.getTankWidth();
+    config.tankWidthLastModified = configHandler.getTankWidthTimestamp();
+    config.tankShape = configHandler.getTankShape();
+    config.tankShapeLastModified = configHandler.getTankShapeTimestamp();
+    config.usedTotal = configHandler.getUsedTotal();
+    config.usedTotalLastModified = configHandler.getUsedTotalTimestamp();
+    config.maxInflow = configHandler.getMaxInflow();
+    config.maxInflowLastModified = configHandler.getMaxInflowTimestamp();
+    config.force_update = configHandler.getForceUpdate();
+    config.forceUpdateLastModified = configHandler.getForceUpdateTimestamp();
+    config.sensorFilter = configHandler.getSensorFilter();
+    config.sensorFilterLastModified = configHandler.getSensorFilterTimestamp();
+    config.ipAddress = configHandler.getIpAddress();
+    config.ipAddressLastModified = configHandler.getIpAddressTimestamp();
+
+    if (changed) {
+        Serial.println("[API] Config values changed after 3-way merge");
+    }
+
+    return true;
 }
 
 bool APIClient::sendConfigWithPriority(DeviceConfig& config) {
@@ -505,22 +553,45 @@ bool APIClient::fetchControl(ControlData& control) {
         return false;
     }
 
-    // Delegate to control data manager
-    bool result = controlDataManager.fetchControl(control);
+    // Fetch control data from server
+    ControlData apiControl;
+    bool result = controlDataManager.fetchControl(apiControl);
 
-    // If control was fetched from direct format endpoint (no timestamps),
-    // use current server time as lastModified (only if time is synced)
-    if (result && isTimeSynced()) {
+    if (!result) {
+        return false;
+    }
+
+    // If fetched data has no timestamps, use current server time
+    if (isTimeSynced()) {
         uint64_t currentTime = getCurrentTimestamp();
-        if (control.pumpSwitchLastModified == 0) {
-            control.pumpSwitchLastModified = currentTime;
+        if (apiControl.pumpSwitchLastModified == 0) {
+            apiControl.pumpSwitchLastModified = currentTime;
         }
-        if (control.configUpdateLastModified == 0) {
-            control.configUpdateLastModified = currentTime;
+        if (apiControl.configUpdateLastModified == 0) {
+            apiControl.configUpdateLastModified = currentTime;
         }
     }
 
-    return result;
+    // Update handler with API values
+    controlHandler.updateFromAPI(
+        apiControl.pumpSwitch, apiControl.pumpSwitchLastModified,
+        apiControl.config_update, apiControl.configUpdateLastModified
+    );
+
+    // Perform 3-way merge
+    bool changed = controlHandler.merge();
+
+    // Return merged values
+    control.pumpSwitch = controlHandler.getPumpSwitch();
+    control.pumpSwitchLastModified = controlHandler.getPumpSwitchTimestamp();
+    control.config_update = controlHandler.getConfigUpdate();
+    control.configUpdateLastModified = controlHandler.getConfigUpdateTimestamp();
+
+    if (changed) {
+        Serial.println("[API] Control values changed after 3-way merge");
+    }
+
+    return true;
 }
 
 bool APIClient::uploadControl(const ControlData& control) {
