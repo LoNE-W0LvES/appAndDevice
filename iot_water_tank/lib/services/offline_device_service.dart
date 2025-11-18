@@ -208,6 +208,12 @@ class OfflineDeviceService {
             ? Map<String, dynamic>.from(configResponse.data as Map)
             : <String, dynamic>{};
 
+        // Debug: Log the config data received from device
+        AppConfig.offlineLog('Config data from device: $configData');
+        if (configData.containsKey('upperThreshold')) {
+          AppConfig.offlineLog('upperThreshold from device: ${configData['upperThreshold']}');
+        }
+
         final deviceData = <String, dynamic>{
           'id': deviceId,
           'name': deviceId, // Will be overridden by cached data if available
@@ -587,10 +593,26 @@ class OfflineDeviceService {
     final keys = prefs.getKeys();
 
     for (final key in keys) {
-      if (key.startsWith('device_cache_') || key == 'sync_queue') {
+      if (key.startsWith('device_cache_') ||
+          key.startsWith('device_config_') ||
+          key == 'sync_queue') {
         await prefs.remove(key);
       }
     }
+    AppConfig.offlineLog('Cleared all cached device data');
+  }
+
+  /// Clear cache for a specific device
+  Future<void> clearDeviceCache(String deviceId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final deviceCacheKey = 'device_cache_$deviceId';
+    final configCacheKey = 'device_config_$deviceId';
+
+    await prefs.remove(deviceCacheKey);
+    await prefs.remove(configCacheKey);
+    await prefs.remove('${deviceCacheKey}_timestamp');
+
+    AppConfig.offlineLog('Cleared cache for device: $deviceId');
   }
 }
 

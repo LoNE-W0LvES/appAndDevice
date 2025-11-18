@@ -210,10 +210,17 @@ class _WaterTankControlScreenState extends State<WaterTankControlScreen>
     final pumpStatus = device.telemetryData['pumpStatus']?.numberValue ?? 0.0;
 
     // Extract device config
+    // Debug logging
+    if (device.deviceConfig['upperThreshold'] != null) {
+      print('[DEBUG] upperThreshold raw value: ${device.deviceConfig['upperThreshold']?.value}');
+      print('[DEBUG] upperThreshold type: ${device.deviceConfig['upperThreshold']?.value.runtimeType}');
+      print('[DEBUG] upperThreshold full object: ${device.deviceConfig['upperThreshold']}');
+    }
     final upperThreshold = _toDouble(device.deviceConfig['upperThreshold']?.value);
     final lowerThreshold = _toDouble(device.deviceConfig['lowerThreshold']?.value);
     final usedTotal = _toDouble(device.deviceConfig['UsedTotal']?.value);
     final maxInflow = _toDouble(device.deviceConfig['maxInflow']?.value);
+    print('[DEBUG] upperThreshold after conversion: $upperThreshold');
 
     // Extract control data
     final pumpSwitch = device.controlData['pumpSwitch']?.value ?? false; // Manual switch control
