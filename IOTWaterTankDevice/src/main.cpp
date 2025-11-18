@@ -842,23 +842,24 @@ void uploadControlData() {
         return;
     }
 
-    // Build JSON payload SYNCHRONOUSLY with mutex protection
-    // This captures exact values at the moment callback is triggered
+    // Build JSON payload SYNCHRONOUSLY from controlHandler (source of truth)
+    // Don't use old controlData - it gets overwritten by periodic fetch tasks!
     String* jsonPayload = new String();
-    if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
-        Serial.printf("[Main] Reading controlData for JSON: pumpSwitch=%d, ts=%llu\n",
-                     controlData.pumpSwitch, controlData.pumpSwitchLastModified);
 
-        // Build JSON from current controlData values
-        *jsonPayload = apiClient.buildControlPayload(controlData);
-        xSemaphoreGive(configMutex);
-        Serial.println("[Main] Built JSON payload for async upload:");
-        Serial.println(*jsonPayload);
-    } else {
-        Serial.println("[Main] Failed to acquire mutex for JSON construction, aborting upload");
-        delete jsonPayload;
-        return;
-    }
+    // Build ControlData struct from controlHandler values
+    ControlData tempControl;
+    tempControl.pumpSwitch = controlHandler.getPumpSwitch();
+    tempControl.pumpSwitchLastModified = controlHandler.getPumpSwitchTimestamp();
+    tempControl.config_update = controlHandler.getConfigUpdate();
+    tempControl.configUpdateLastModified = controlHandler.getConfigUpdateTimestamp();
+
+    Serial.printf("[Main] Building JSON from controlHandler: pumpSwitch=%d, ts=%llu\n",
+                 tempControl.pumpSwitch, tempControl.pumpSwitchLastModified);
+
+    // Build JSON from controlHandler values (no mutex needed - handler is independent)
+    *jsonPayload = apiClient.buildControlPayload(tempControl);
+    Serial.println("[Main] Built JSON payload for async upload:");
+    Serial.println(*jsonPayload);
 
     // Create async task for control upload with pre-built JSON
     BaseType_t result = xTaskCreate(
