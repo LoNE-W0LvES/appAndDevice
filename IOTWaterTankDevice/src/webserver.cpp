@@ -13,6 +13,9 @@ extern TelemetryDataHandler telemetryHandler;
 extern DeviceConfig deviceConfig;
 extern ControlData controlData;
 
+// External reference to config mutex (for thread-safe access)
+extern SemaphoreHandle_t configMutex;
+
 WebServer::WebServer()
     : server(80),
       currentWaterLevel(0),
@@ -428,11 +431,15 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
         pumpCallback(mergedPumpValue);
     }
 
-    // Also update old controlData for backward compatibility
-    controlData.pumpSwitch = controlHandler.getPumpSwitch();
-    controlData.pumpSwitchLastModified = controlHandler.getPumpSwitchTimestamp();
-    controlData.config_update = controlHandler.getConfigUpdate();
-    controlData.configUpdateLastModified = controlHandler.getConfigUpdateTimestamp();
+    // Update old controlData for backward compatibility
+    // IMPORTANT: Take mutex to prevent race with async tasks reading controlData
+    if (configMutex != NULL && xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
+        controlData.pumpSwitch = controlHandler.getPumpSwitch();
+        controlData.pumpSwitchLastModified = controlHandler.getPumpSwitchTimestamp();
+        controlData.config_update = controlHandler.getConfigUpdate();
+        controlData.configUpdateLastModified = controlHandler.getConfigUpdateTimestamp();
+        xSemaphoreGive(configMutex);
+    }
 
     Serial.println("[WebServer] Control updated from app (Local):");
     Serial.println("  Pump Switch: " + String(controlHandler.getPumpSwitch()));
@@ -653,24 +660,28 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
     bool changed = configHandler.merge();
 
     // Update old deviceConfig for backward compatibility
-    deviceConfig.upperThreshold = configHandler.getUpperThreshold();
-    deviceConfig.upperThresholdLastModified = configHandler.getUpperThresholdTimestamp();
-    deviceConfig.lowerThreshold = configHandler.getLowerThreshold();
-    deviceConfig.lowerThresholdLastModified = configHandler.getLowerThresholdTimestamp();
-    deviceConfig.tankHeight = configHandler.getTankHeight();
-    deviceConfig.tankHeightLastModified = configHandler.getTankHeightTimestamp();
-    deviceConfig.tankWidth = configHandler.getTankWidth();
-    deviceConfig.tankWidthLastModified = configHandler.getTankWidthTimestamp();
-    deviceConfig.tankShape = configHandler.getTankShape();
-    deviceConfig.tankShapeLastModified = configHandler.getTankShapeTimestamp();
-    deviceConfig.usedTotal = configHandler.getUsedTotal();
-    deviceConfig.usedTotalLastModified = configHandler.getUsedTotalTimestamp();
-    deviceConfig.maxInflow = configHandler.getMaxInflow();
-    deviceConfig.maxInflowLastModified = configHandler.getMaxInflowTimestamp();
-    deviceConfig.force_update = configHandler.getForceUpdate();
-    deviceConfig.forceUpdateLastModified = configHandler.getForceUpdateTimestamp();
-    deviceConfig.ipAddress = configHandler.getIpAddress();
-    deviceConfig.ipAddressLastModified = configHandler.getIpAddressTimestamp();
+    // IMPORTANT: Take mutex to prevent race with async tasks reading deviceConfig
+    if (configMutex != NULL && xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
+        deviceConfig.upperThreshold = configHandler.getUpperThreshold();
+        deviceConfig.upperThresholdLastModified = configHandler.getUpperThresholdTimestamp();
+        deviceConfig.lowerThreshold = configHandler.getLowerThreshold();
+        deviceConfig.lowerThresholdLastModified = configHandler.getLowerThresholdTimestamp();
+        deviceConfig.tankHeight = configHandler.getTankHeight();
+        deviceConfig.tankHeightLastModified = configHandler.getTankHeightTimestamp();
+        deviceConfig.tankWidth = configHandler.getTankWidth();
+        deviceConfig.tankWidthLastModified = configHandler.getTankWidthTimestamp();
+        deviceConfig.tankShape = configHandler.getTankShape();
+        deviceConfig.tankShapeLastModified = configHandler.getTankShapeTimestamp();
+        deviceConfig.usedTotal = configHandler.getUsedTotal();
+        deviceConfig.usedTotalLastModified = configHandler.getUsedTotalTimestamp();
+        deviceConfig.maxInflow = configHandler.getMaxInflow();
+        deviceConfig.maxInflowLastModified = configHandler.getMaxInflowTimestamp();
+        deviceConfig.force_update = configHandler.getForceUpdate();
+        deviceConfig.forceUpdateLastModified = configHandler.getForceUpdateTimestamp();
+        deviceConfig.ipAddress = configHandler.getIpAddress();
+        deviceConfig.ipAddressLastModified = configHandler.getIpAddressTimestamp();
+        xSemaphoreGive(configMutex);
+    }
 
     Serial.println("[WebServer] Config updated from app (Local):");
     Serial.println("  Upper Threshold: " + String(configHandler.getUpperThreshold()));
