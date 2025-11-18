@@ -111,7 +111,7 @@ class OfflineDeviceService {
     // Try local connection first if IP is available
     if (localIp != null && localIp.isNotEmpty) {
       try {
-        AppConfig.offlineLog('⚡ Fetching LIVE telemetry from: http://$localIp/$deviceId');
+        AppConfig.offlineLog('⚡ Fetching LIVE data from device: http://$localIp/$deviceId/...');
         final localDevice = await _getDeviceFromLocal(deviceId, localIp);
 
         // Use the fresh config from the device and update cache
