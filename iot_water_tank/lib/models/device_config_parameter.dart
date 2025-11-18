@@ -84,32 +84,19 @@ class DeviceConfigParameter extends Equatable {
     return 'string';
   }
 
-  /// Validate and fix timestamp (handle microseconds or invalid values)
+  /// Validate timestamp (ensure it's within valid DateTime range)
   static int? _validateTimestamp(int timestamp) {
     // Valid range for DateTime in Dart: -8640000000000000 to 8640000000000000 ms
     const maxValidTimestamp = 8640000000000000;
     const minValidTimestamp = -8640000000000000;
 
-    // If timestamp is way too large, it might be in microseconds - convert to milliseconds
-    if (timestamp > maxValidTimestamp) {
-      final converted = timestamp ~/ 1000; // Divide by 1000 (microseconds to milliseconds)
-      if (converted >= minValidTimestamp && converted <= maxValidTimestamp) {
-        print('[DeviceConfigParameter] Converted microsecond timestamp $timestamp to milliseconds: $converted');
-        return converted;
-      }
-      // Still invalid after conversion - reject it
-      print('[DeviceConfigParameter] Invalid timestamp $timestamp (out of range), using null');
-      return null;
+    // Check if timestamp is within valid range
+    if (timestamp >= minValidTimestamp && timestamp <= maxValidTimestamp) {
+      return timestamp;
     }
 
-    // If timestamp is negative and out of range
-    if (timestamp < minValidTimestamp) {
-      print('[DeviceConfigParameter] Invalid timestamp $timestamp (too small), using null');
-      return null;
-    }
-
-    // Valid timestamp
-    return timestamp;
+    // Invalid timestamp - return null
+    return null;
   }
 
   /// Convert to JSON for API requests
