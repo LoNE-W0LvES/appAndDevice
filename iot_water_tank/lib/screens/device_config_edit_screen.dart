@@ -124,22 +124,19 @@ class _DeviceConfigEditScreenState extends State<DeviceConfigEditScreen> {
           );
         }
 
-        // Update config via local endpoint
+        // Update config via local endpoint (cache is updated internally)
         await _offlineDeviceService.updateDeviceConfig(
           widget.device.deviceId,
           changedConfig,
           localIp: localIp,
         );
 
-        // Fetch updated device data
-        final updatedDevice = await _offlineDeviceService.getDevice(
-          widget.device.deviceId,
-          localIp: localIp,
-        );
-
         if (!mounted) return;
 
-        // Update provider
+        // Merge changed config into current device and update provider immediately
+        final updatedConfigMap = Map<String, DeviceConfigParameter>.from(widget.device.deviceConfig);
+        updatedConfigMap.addAll(changedConfig);
+        final updatedDevice = widget.device.copyWith(deviceConfig: updatedConfigMap);
         context.read<DeviceProvider>().setSelectedDevice(updatedDevice);
       } else {
         // Online mode: Use DeviceService (this will also set config_update = true)
@@ -156,9 +153,6 @@ class _DeviceConfigEditScreenState extends State<DeviceConfigEditScreen> {
 
       if (!mounted) return;
 
-      // Refresh device list
-      await context.read<DeviceProvider>().refreshDevices();
-
       // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -170,9 +164,9 @@ class _DeviceConfigEditScreenState extends State<DeviceConfigEditScreen> {
         ),
       );
 
-      // Navigate back with result to trigger refresh
+      // Navigate back (no need to trigger refresh, provider already updated)
       if (mounted) {
-        Navigator.pop(context, true); // Return true to indicate success
+        Navigator.pop(context);
       }
     } on ApiException catch (e) {
       setState(() {

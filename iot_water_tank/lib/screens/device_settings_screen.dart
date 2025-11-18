@@ -497,12 +497,12 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                           : null,
                       onTap: widget.device.deviceConfig.isEmpty
                           ? null
-                          : () async {
+                          : () {
                               // Get the latest device from provider before opening edit screen
                               final deviceProvider = context.read<DeviceProvider>();
                               final currentDevice = deviceProvider.selectedDevice ?? widget.device;
 
-                              final result = await Navigator.push<bool>(
+                              Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => DeviceConfigEditScreen(
@@ -510,11 +510,7 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                                   ),
                                 ),
                               );
-
-                              // If config was updated, refresh device data
-                              if (result == true && mounted) {
-                                await context.read<DeviceProvider>().selectDevice(widget.device.id);
-                              }
+                              // No need to refresh - provider is updated immediately on save
                             },
                     ),
                     const Divider(height: 1),
