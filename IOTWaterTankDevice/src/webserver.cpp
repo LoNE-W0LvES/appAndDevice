@@ -1,5 +1,17 @@
 #include "webserver.h"
 #include "wifi_manager.h"
+#include "handle_control_data.h"
+#include "handle_config_data.h"
+#include "handle_telemetry_data.h"
+
+// External references to global handlers (defined in main.cpp)
+extern ControlDataHandler controlHandler;
+extern ConfigDataHandler configHandler;
+extern TelemetryDataHandler telemetryHandler;
+
+// External references to old global data (for backward compatibility)
+extern DeviceConfig deviceConfig;
+extern ControlData controlData;
 
 WebServer::WebServer()
     : server(80),
@@ -284,27 +296,28 @@ void WebServer::handleGetTelemetry(AsyncWebServerRequest* request) {
 void WebServer::handleGetControl(AsyncWebServerRequest* request) {
     // GET /{device_id}/control - Return control data with timestamps
     // Format matches server structure: {field: {key, label, type, value, lastModified}}
+    // Uses controlHandler.value (merged self value) for JSON response
     Serial.println("[WebServer] GET /" + deviceId + "/control");
 
     StaticJsonDocument<1024> doc;
 
-    // Pump Switch (command from server)
+    // Pump Switch - Use handler's merged value (not api_value or local_value)
     JsonObject pumpSwitch = doc.createNestedObject("pumpSwitch");
     pumpSwitch["key"] = "pumpSwitch";
     pumpSwitch["label"] = "Pump Switch";
     pumpSwitch["type"] = "boolean";
-    pumpSwitch["value"] = controlData.pumpSwitch;
-    pumpSwitch["lastModified"] = controlData.pumpSwitchLastModified;
+    pumpSwitch["value"] = controlHandler.getPumpSwitch();  // Use merged value
+    pumpSwitch["lastModified"] = (unsigned long)controlHandler.getPumpSwitchTimestamp();
 
-    // Config Update Flag (system control)
+    // Config Update Flag - Use handler's merged value
     JsonObject config_update = doc.createNestedObject("config_update");
     config_update["key"] = "config_update";
     config_update["label"] = "Configuration Update";
     config_update["type"] = "boolean";
-    config_update["value"] = controlData.config_update;
+    config_update["value"] = controlHandler.getConfigUpdate();  // Use merged value
     config_update["description"] = "When enabled, device will update its configuration from server";
     config_update["system"] = true;
-    config_update["lastModified"] = controlData.configUpdateLastModified;
+    config_update["lastModified"] = (unsigned long)controlHandler.getConfigUpdateTimestamp();
 
     String response;
     serializeJson(doc, response);
