@@ -39,6 +39,10 @@ String ControlDataManager::buildControlPayload(const ControlData& control) {
     // Build payload with priority flag (lastModified=0) for all fields
     // This ensures device changes always override server values
     // Server expects full structure with key, label, type, value, lastModified
+
+    Serial.printf("[ControlData] buildControlPayload: pumpSwitch=%d, ts=%llu\n",
+                 control.pumpSwitch, control.pumpSwitchLastModified);
+
     StaticJsonDocument<1024> doc;
 
     JsonObject pumpSwitch = doc.createNestedObject("pumpSwitch");
