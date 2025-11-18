@@ -5,6 +5,7 @@ import '../models/device.dart';
 import '../providers/device_provider.dart';
 import '../services/device_service.dart';
 import '../services/offline_mode_service.dart';
+import '../services/offline_device_service.dart';
 import '../utils/api_exception.dart';
 import 'water_tank_control_screen.dart';
 import 'device_config_edit_screen.dart';
@@ -26,6 +27,7 @@ class DeviceSettingsScreen extends StatefulWidget {
 class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
   final _deviceService = DeviceService();
   final _offlineModeService = OfflineModeService();
+  final _offlineDeviceService = OfflineDeviceService();
   final _ipController = TextEditingController();
   bool _isRemoving = false;
   bool _isOfflineMode = false;
@@ -40,6 +42,7 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
   void initState() {
     super.initState();
     _deviceService.initialize();
+    _offlineDeviceService.initialize();
     _checkOfflineMode();
     _ipController.text = widget.device.localIp ?? '';
   }
@@ -138,6 +141,36 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
           content: Text('An unexpected error occurred. Please try again.'),
           backgroundColor: Colors.red,
           duration: Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleClearCache() async {
+    try {
+      await _offlineDeviceService.clearDeviceCache(widget.device.deviceId);
+
+      if (!mounted) return;
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cache cleared successfully. Pull to refresh to fetch new data.'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+
+      // Optionally refresh the device data
+      await context.read<DeviceProvider>().refreshDevices();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to clear cache: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
         ),
       );
     }
@@ -497,6 +530,70 @@ class _DeviceSettingsScreenState extends State<DeviceSettingsScreen> {
                       },
                     ),
                   ],
+                ),
+              ),
+
+              const SizedBox(height: 32),
+
+              // Troubleshooting Section
+              Text(
+                'TROUBLESHOOTING',
+                style: textTheme.titleSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              Card(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.cleaning_services_outlined,
+                            color: colorScheme.primary,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Clear Cache',
+                            style: textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Clear all cached data for this device. Use this if you see incorrect values.',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        onPressed: _handleClearCache,
+                        icon: const Icon(Icons.delete_sweep),
+                        label: const Text('Clear Cache'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
 
