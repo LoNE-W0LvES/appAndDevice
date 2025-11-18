@@ -38,15 +38,24 @@ bool ControlDataManager::fetchControl(ControlData& control) {
 bool ControlDataManager::uploadControl(const ControlData& control) {
     // Build payload with priority flag (lastModified=0) for all fields
     // This ensures device changes always override server values
-    StaticJsonDocument<512> doc;
+    // Server expects full structure with key, label, type, value, lastModified
+    StaticJsonDocument<1024> doc;
 
     JsonObject pumpSwitch = doc.createNestedObject("pumpSwitch");
+    pumpSwitch["key"] = "pumpSwitch";
+    pumpSwitch["label"] = "Pump Switch";
+    pumpSwitch["type"] = "boolean";
     pumpSwitch["value"] = control.pumpSwitch;
     pumpSwitch["lastModified"] = 0;  // Priority flag
 
     JsonObject configUpdate = doc.createNestedObject("config_update");
+    configUpdate["key"] = "config_update";
+    configUpdate["label"] = "Configuration Update";
+    configUpdate["type"] = "boolean";
     configUpdate["value"] = control.config_update;
     configUpdate["lastModified"] = 0;  // Priority flag
+    configUpdate["description"] = "When enabled, device will update its configuration from server";
+    configUpdate["system"] = true;
 
     String payload;
     serializeJson(doc, payload);

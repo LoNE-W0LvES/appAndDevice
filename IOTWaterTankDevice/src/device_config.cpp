@@ -310,55 +310,76 @@ String DeviceConfigManager::buildConfigPayload(const DeviceConfig& config, bool 
     doc["deviceId"] = DEVICE_ID;
 
     // Create nested objects for each field with per-field timestamps
+    // Server expects: key, label, type, value, lastModified
     JsonObject upperThreshold = doc.createNestedObject("upperThreshold");
     upperThreshold["key"] = "upperThreshold";
+    upperThreshold["label"] = "Upper Threshold";
+    upperThreshold["type"] = "number";
     upperThreshold["value"] = config.upperThreshold;
-    upperThreshold["timestamp"] = priority ? 0 : (unsigned long)config.upperThresholdLastModified;
+    upperThreshold["lastModified"] = priority ? 0 : (unsigned long)config.upperThresholdLastModified;
 
     JsonObject lowerThreshold = doc.createNestedObject("lowerThreshold");
     lowerThreshold["key"] = "lowerThreshold";
+    lowerThreshold["label"] = "Lower Threshold";
+    lowerThreshold["type"] = "number";
     lowerThreshold["value"] = config.lowerThreshold;
-    lowerThreshold["timestamp"] = priority ? 0 : (unsigned long)config.lowerThresholdLastModified;
+    lowerThreshold["lastModified"] = priority ? 0 : (unsigned long)config.lowerThresholdLastModified;
 
     JsonObject tankHeight = doc.createNestedObject("tankHeight");
     tankHeight["key"] = "tankHeight";
+    tankHeight["label"] = "Tank Height";
+    tankHeight["type"] = "number";
     tankHeight["value"] = config.tankHeight;
-    tankHeight["timestamp"] = priority ? 0 : (unsigned long)config.tankHeightLastModified;
+    tankHeight["lastModified"] = priority ? 0 : (unsigned long)config.tankHeightLastModified;
 
     JsonObject tankWidth = doc.createNestedObject("tankWidth");
     tankWidth["key"] = "tankWidth";
+    tankWidth["label"] = "Tank Width";
+    tankWidth["type"] = "number";
     tankWidth["value"] = config.tankWidth;
-    tankWidth["timestamp"] = priority ? 0 : (unsigned long)config.tankWidthLastModified;
+    tankWidth["lastModified"] = priority ? 0 : (unsigned long)config.tankWidthLastModified;
 
     JsonObject tankShape = doc.createNestedObject("tankShape");
     tankShape["key"] = "tankShape";
+    tankShape["label"] = "Tank Shape";
+    tankShape["type"] = "string";
     tankShape["value"] = config.tankShape;
-    tankShape["timestamp"] = priority ? 0 : (unsigned long)config.tankShapeLastModified;
+    tankShape["lastModified"] = priority ? 0 : (unsigned long)config.tankShapeLastModified;
 
     JsonObject usedTotal = doc.createNestedObject("UsedTotal");
     usedTotal["key"] = "UsedTotal";
+    usedTotal["label"] = "Used Total";
+    usedTotal["type"] = "number";
     usedTotal["value"] = config.usedTotal;
-    usedTotal["timestamp"] = priority ? 0 : (unsigned long)config.usedTotalLastModified;
+    usedTotal["lastModified"] = priority ? 0 : (unsigned long)config.usedTotalLastModified;
 
     JsonObject maxInflow = doc.createNestedObject("maxInflow");
     maxInflow["key"] = "maxInflow";
+    maxInflow["label"] = "Max Inflow";
+    maxInflow["type"] = "number";
     maxInflow["value"] = config.maxInflow;
-    maxInflow["timestamp"] = priority ? 0 : (unsigned long)config.maxInflowLastModified;
+    maxInflow["lastModified"] = priority ? 0 : (unsigned long)config.maxInflowLastModified;
 
     JsonObject forceUpdate = doc.createNestedObject("force_update");
     forceUpdate["key"] = "force_update";
+    forceUpdate["label"] = "Force Update";
+    forceUpdate["type"] = "boolean";
     forceUpdate["value"] = config.force_update;
-    forceUpdate["timestamp"] = priority ? 0 : (unsigned long)config.forceUpdateLastModified;
+    forceUpdate["lastModified"] = priority ? 0 : (unsigned long)config.forceUpdateLastModified;
 
     JsonObject sensorFilter = doc.createNestedObject("sensorFilter");
     sensorFilter["key"] = "sensorFilter";
+    sensorFilter["label"] = "Sensor Filter";
+    sensorFilter["type"] = "boolean";
     sensorFilter["value"] = config.sensorFilter;
-    sensorFilter["timestamp"] = priority ? 0 : (unsigned long)config.sensorFilterLastModified;
+    sensorFilter["lastModified"] = priority ? 0 : (unsigned long)config.sensorFilterLastModified;
 
     JsonObject ipAddress = doc.createNestedObject("ip_address");
     ipAddress["key"] = "ip_address";
+    ipAddress["label"] = "IP Address";
+    ipAddress["type"] = "string";
     ipAddress["value"] = config.ipAddress;
-    ipAddress["timestamp"] = priority ? 0 : (unsigned long)config.ipAddressLastModified;
+    ipAddress["lastModified"] = priority ? 0 : (unsigned long)config.ipAddressLastModified;
 
     String payload;
     serializeJson(doc, payload);
