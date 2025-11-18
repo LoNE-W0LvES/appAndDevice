@@ -51,18 +51,10 @@ bool DeviceConfigManager::fetchAndApplyServerConfig(DeviceConfig& config) {
         Serial.println("  Lower Threshold: " + String(config.lowerThreshold));
         return true;
     } else {
-        // Values identical - update timestamps from server for reference
-        Serial.println("[DeviceConfig] Config values identical to server - updating timestamps only");
-        config.upperThresholdLastModified = serverConfig.upperThresholdLastModified;
-        config.lowerThresholdLastModified = serverConfig.lowerThresholdLastModified;
-        config.tankHeightLastModified = serverConfig.tankHeightLastModified;
-        config.tankWidthLastModified = serverConfig.tankWidthLastModified;
-        config.tankShapeLastModified = serverConfig.tankShapeLastModified;
-        config.usedTotalLastModified = serverConfig.usedTotalLastModified;
-        config.maxInflowLastModified = serverConfig.maxInflowLastModified;
-        config.forceUpdateLastModified = serverConfig.forceUpdateLastModified;
-        config.ipAddressLastModified = serverConfig.ipAddressLastModified;
-        return true;  // Fetch succeeded, even though values didn't change
+        // Values identical - copy server config anyway (to ensure all fields are populated)
+        Serial.println("[DeviceConfig] Config values identical to server - applying anyway");
+        config = serverConfig;
+        return true;  // Fetch succeeded
     }
 }
 
