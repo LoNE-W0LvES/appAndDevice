@@ -57,6 +57,14 @@ public:
     bool isWiFiConfigured();
     void setWiFiConfigured(bool configured);
 
+    // Device configuration persistence
+    // Save critical config values so device works offline without server
+    void saveDeviceConfig(float upperThreshold, float lowerThreshold,
+                         float tankHeight, float tankWidth, const String& tankShape);
+    bool loadDeviceConfig(float& upperThreshold, float& lowerThreshold,
+                         float& tankHeight, float& tankWidth, String& tankShape);
+    bool hasDeviceConfig();  // Check if config exists in storage
+
 private:
     Preferences prefs;
 

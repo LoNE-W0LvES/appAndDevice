@@ -224,6 +224,21 @@ void initializeSystem() {
     // Initialize storage manager
     storageManager.begin();
 
+    // Load device config from NVS if available
+    // This allows device to work offline without server on first boot
+    if (storageManager.loadDeviceConfig(
+            deviceConfig.upperThreshold,
+            deviceConfig.lowerThreshold,
+            deviceConfig.tankHeight,
+            deviceConfig.tankWidth,
+            deviceConfig.tankShape)) {
+        Serial.println("[Main] Device config loaded from NVS storage");
+        Serial.printf("  Tank: %.0f x %.0f cm (%s)\n",
+                     deviceConfig.tankHeight, deviceConfig.tankWidth, deviceConfig.tankShape.c_str());
+    } else {
+        Serial.println("[Main] No stored config - will fetch from server on connect");
+    }
+
     // Initialize WiFi manager
     initWiFiManager();
 
@@ -449,6 +464,15 @@ void fetchControlData() {
 
                 webServer.updateDeviceConfig(deviceConfig);
 
+                // Save config to NVS for persistence across reboots
+                storageManager.saveDeviceConfig(
+                    deviceConfig.upperThreshold,
+                    deviceConfig.lowerThreshold,
+                    deviceConfig.tankHeight,
+                    deviceConfig.tankWidth,
+                    deviceConfig.tankShape
+                );
+
                 Serial.println("[Main] Configuration updated successfully");
             }
         }
@@ -503,6 +527,15 @@ void syncConfigToServer() {
 
             // Update last synced config (oldData = newData)
             lastSyncedConfig = deviceConfig;
+
+            // Save config to NVS for persistence across reboots
+            storageManager.saveDeviceConfig(
+                deviceConfig.upperThreshold,
+                deviceConfig.lowerThreshold,
+                deviceConfig.tankHeight,
+                deviceConfig.tankWidth,
+                deviceConfig.tankShape
+            );
 
             // Reapply config after sync
             sensorManager.setTankConfig(
@@ -564,6 +597,15 @@ void fetchConfigFromServer() {
         );
 
         webServer.updateDeviceConfig(deviceConfig);
+
+        // Save config to NVS for persistence across reboots
+        storageManager.saveDeviceConfig(
+            deviceConfig.upperThreshold,
+            deviceConfig.lowerThreshold,
+            deviceConfig.tankHeight,
+            deviceConfig.tankWidth,
+            deviceConfig.tankShape
+        );
 
         Serial.println("[Main] Config fetched and applied from server");
     } else {

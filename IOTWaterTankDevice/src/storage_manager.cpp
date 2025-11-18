@@ -354,3 +354,71 @@ void StorageManager::setWiFiConfigured(bool configured) {
 
     DEBUG_PRINTF("[Storage] WiFi configured flag set to: %s\n", configured ? "true" : "false");
 }
+
+// ============================================================================
+// DEVICE CONFIGURATION PERSISTENCE
+// ============================================================================
+
+void StorageManager::saveDeviceConfig(float upperThreshold, float lowerThreshold,
+                                      float tankHeight, float tankWidth, const String& tankShape) {
+    if (!openNamespace("devcfg", false)) {
+        return;
+    }
+
+    prefs.putFloat("upperThr", upperThreshold);
+    prefs.putFloat("lowerThr", lowerThreshold);
+    prefs.putFloat("tankH", tankHeight);
+    prefs.putFloat("tankW", tankWidth);
+    prefs.putString("tankShape", tankShape);
+
+    closeNamespace();
+
+    DEBUG_PRINTLN("[Storage] Device config saved to NVS:");
+    DEBUG_PRINTF("  Upper Threshold: %.2f\n", upperThreshold);
+    DEBUG_PRINTF("  Lower Threshold: %.2f\n", lowerThreshold);
+    DEBUG_PRINTF("  Tank Height: %.2f\n", tankHeight);
+    DEBUG_PRINTF("  Tank Width: %.2f\n", tankWidth);
+    DEBUG_PRINTF("  Tank Shape: %s\n", tankShape.c_str());
+}
+
+bool StorageManager::loadDeviceConfig(float& upperThreshold, float& lowerThreshold,
+                                      float& tankHeight, float& tankWidth, String& tankShape) {
+    if (!openNamespace("devcfg", true)) {
+        return false;
+    }
+
+    // Check if config exists by checking if tankHeight was ever set
+    if (!prefs.isKey("tankH")) {
+        closeNamespace();
+        DEBUG_PRINTLN("[Storage] No device config found in NVS");
+        return false;
+    }
+
+    upperThreshold = prefs.getFloat("upperThr", 95.0f);
+    lowerThreshold = prefs.getFloat("lowerThr", 20.0f);
+    tankHeight = prefs.getFloat("tankH", 0.0f);
+    tankWidth = prefs.getFloat("tankW", 0.0f);
+    tankShape = prefs.getString("tankShape", "");
+
+    closeNamespace();
+
+    DEBUG_PRINTLN("[Storage] Device config loaded from NVS:");
+    DEBUG_PRINTF("  Upper Threshold: %.2f\n", upperThreshold);
+    DEBUG_PRINTF("  Lower Threshold: %.2f\n", lowerThreshold);
+    DEBUG_PRINTF("  Tank Height: %.2f\n", tankHeight);
+    DEBUG_PRINTF("  Tank Width: %.2f\n", tankWidth);
+    DEBUG_PRINTF("  Tank Shape: %s\n", tankShape.c_str());
+
+    return true;
+}
+
+bool StorageManager::hasDeviceConfig() {
+    if (!openNamespace("devcfg", true)) {
+        return false;
+    }
+
+    bool hasConfig = prefs.isKey("tankH");
+    closeNamespace();
+
+    return hasConfig;
+}
