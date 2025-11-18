@@ -104,6 +104,7 @@ bool DeviceConfigManager::configValuesChanged(const DeviceConfig& a, const Devic
     if (a.usedTotal != b.usedTotal) return true;
     if (a.maxInflow != b.maxInflow) return true;
     if (a.force_update != b.force_update) return true;
+    if (a.sensorFilter != b.sensorFilter) return true;
     if (a.ipAddress != b.ipAddress) return true;
 
     // All values identical
@@ -228,6 +229,7 @@ bool DeviceConfigManager::parseConfig(const String& json, DeviceConfig& config) 
         config.usedTotal = deviceConfig["UsedTotal"]["value"] | 0.0f;
         config.maxInflow = deviceConfig["maxInflow"]["value"] | 0.0f;
         config.force_update = deviceConfig["force_update"]["value"] | false;
+        config.sensorFilter = deviceConfig["sensorFilter"]["value"] | DEFAULT_SENSOR_FILTER;
         config.ipAddress = deviceConfig["ip_address"]["value"] | "";
 
         // Use uint64_t for timestamp to avoid 32-bit overflow
@@ -242,6 +244,7 @@ bool DeviceConfigManager::parseConfig(const String& json, DeviceConfig& config) 
         config.usedTotal = deviceConfig["UsedTotal"] | 0.0f;
         config.maxInflow = deviceConfig["maxInflow"] | 0.0f;
         config.force_update = deviceConfig["force_update"] | false;
+        config.sensorFilter = deviceConfig["sensorFilter"] | DEFAULT_SENSOR_FILTER;
         config.ipAddress = deviceConfig["ip_address"] | "";
         config.lastModified = 0;  // Not available in direct format
     }
@@ -294,6 +297,11 @@ String DeviceConfigManager::buildConfigPayload(const DeviceConfig& config, bool 
     forceUpdate["key"] = "force_update";
     forceUpdate["value"] = config.force_update;
     forceUpdate["timestamp"] = priority ? 0 : (unsigned long)config.lastModified;
+
+    JsonObject sensorFilter = doc.createNestedObject("sensorFilter");
+    sensorFilter["key"] = "sensorFilter";
+    sensorFilter["value"] = config.sensorFilter;
+    sensorFilter["timestamp"] = priority ? 0 : (unsigned long)config.lastModified;
 
     JsonObject ipAddress = doc.createNestedObject("ip_address");
     ipAddress["key"] = "ip_address";

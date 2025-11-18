@@ -22,6 +22,7 @@
 typedef void (*PumpControlCallback)(bool state);
 typedef void (*WiFiSaveCallback)(const String& ssid, const String& password,
                                  const String& dashUser, const String& dashPass);
+typedef void (*ConfigSyncCallback)();  // Called when config changes and needs immediate sync
 
 class WebServer {
 public:
@@ -45,6 +46,9 @@ public:
     // Set WiFi save callback
     void setWiFiSaveCallback(WiFiSaveCallback callback);
 
+    // Set config sync callback (called when config changes and needs immediate sync)
+    void setConfigSyncCallback(ConfigSyncCallback callback);
+
     // Handle server (called in loop if needed)
     void handle();
 
@@ -67,6 +71,7 @@ private:
     // Callbacks
     PumpControlCallback pumpCallback;
     WiFiSaveCallback wifiSaveCallback;
+    ConfigSyncCallback configSyncCallback;
 
     // Setup routes
     void setupRoutes();

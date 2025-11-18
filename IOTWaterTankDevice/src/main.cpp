@@ -68,20 +68,21 @@ bool configFetched = false;
 
 /**
  * Pump control callback for web server
- * Called when Flutter app sends pump control command
+ * Called when Flutter app sends pump control command via local webserver
+ *
+ * IMPORTANT: App commands via local webserver should always work,
+ * regardless of mode. Mode restriction only applies to cloud commands.
  */
 void onPumpControl(bool state) {
     Serial.println("[Main] Web server pump control: " + String(state ? "ON" : "OFF"));
 
-    // Only allow if in manual mode
-    if (relayController.getMode() == MODE_MANUAL) {
-        if (state) {
-            relayController.turnOn();
-        } else {
-            relayController.turnOff();
-        }
+    // App has direct control via local webserver - always apply
+    if (state) {
+        relayController.turnOn();
+        Serial.println("[Main] Pump turned ON by app");
     } else {
-        Serial.println("[Main] Pump control ignored (not in MANUAL mode)");
+        relayController.turnOff();
+        Serial.println("[Main] Pump turned OFF by app");
     }
 }
 
@@ -334,6 +335,7 @@ bool connectToBackend() {
     webServer.begin(DEVICE_ID, &apiClient);
     webServer.setPumpControlCallback(onPumpControl);
     webServer.setWiFiSaveCallback(onWiFiSave);
+    webServer.setConfigSyncCallback(syncConfigToServer);  // Immediate sync when config changes
 
     displayManager.showMessage("Ready", "System online", 2000);
 
@@ -460,8 +462,9 @@ void checkOTAUpdate() {
 }
 
 /**
- * Sync config to server if locally modified (every 30 seconds)
+ * Sync config to server if locally modified
  * Only syncs if data has actually changed (oldData != newData)
+ * Called immediately when config changes (via callback from webserver)
  */
 void syncConfigToServer() {
     if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
@@ -499,6 +502,53 @@ void syncConfigToServer() {
         } else {
             Serial.println("[Main] Config values unchanged - skipping sync");
         }
+    }
+}
+
+/**
+ * Fetch config from server periodically (every 30 seconds)
+ * Only fetches when there's NO pending config to upload (bidirectional sync)
+ * If hasPendingConfigSync() == true, skip fetch to avoid conflicts
+ */
+void fetchConfigFromServer() {
+    if (!isWiFiConnected() || !apiClient.isAuthenticated()) {
+        return;  // Skip if not connected
+    }
+
+    // IMPORTANT: Only fetch FROM server if we don't have pending changes TO server
+    // This prevents overwriting local changes that haven't been synced yet
+    if (apiClient.hasPendingConfigSync()) {
+        Serial.println("[Main] Skipping server fetch - pending local changes to sync first");
+        return;
+    }
+
+    Serial.println("[Main] Fetching config from server...");
+
+    // Fetch latest config from server
+    if (apiClient.fetchAndApplyServerConfig(deviceConfig)) {
+        // Update last synced config (oldData = newData)
+        lastSyncedConfig = deviceConfig;
+
+        // Apply new configuration
+        sensorManager.setTankConfig(
+            deviceConfig.tankHeight,
+            deviceConfig.tankWidth,
+            deviceConfig.tankShape
+        );
+
+        displayManager.setTankSettings(
+            deviceConfig.tankHeight,
+            deviceConfig.tankWidth,
+            deviceConfig.tankShape,
+            deviceConfig.upperThreshold,
+            deviceConfig.lowerThreshold
+        );
+
+        webServer.updateDeviceConfig(deviceConfig);
+
+        Serial.println("[Main] Config fetched and applied from server");
+    } else {
+        Serial.println("[Main] Failed to fetch config from server");
     }
 }
 
@@ -693,10 +743,11 @@ void loop() {
             uploadTelemetry();
         }
 
-        // Sync config to server if locally modified (every 30 seconds)
+        // Fetch config from server periodically (every 30 seconds)
+        // Note: Sync TO server is now immediate (triggered by callback when config changes)
         if (currentTime - lastConfigCheck >= TELEMETRY_UPLOAD_INTERVAL) {
             lastConfigCheck = currentTime;
-            syncConfigToServer();
+            fetchConfigFromServer();
         }
 
         // Fetch control data (every 5 minutes)

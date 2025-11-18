@@ -130,6 +130,11 @@
 // Adjust lower for slower systems, higher for fast-filling industrial tanks
 #define SENSOR_SPIKE_THRESHOLD 20.0f  // cm
 
+// Sensor filter enable/disable
+// When enabled, applies filtering/smoothing to sensor readings
+// Can be toggled via device config from server or app
+#define DEFAULT_SENSOR_FILTER true
+
 // ============================================================================
 // PREFERENCES KEYS (NVS Storage)
 // ============================================================================

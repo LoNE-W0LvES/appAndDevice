@@ -21,6 +21,7 @@ struct DeviceConfig {
     float usedTotal;
     float maxInflow;
     bool force_update;      // Matches server's "force_update" key
+    bool sensorFilter;      // Enable/disable sensor filtering/smoothing
     String ipAddress;
 
     // Single timestamp for entire config (Unix epoch milliseconds)
@@ -37,6 +38,7 @@ struct DeviceConfig {
           usedTotal(0.0f),
           maxInflow(0.0f),
           force_update(false),
+          sensorFilter(DEFAULT_SENSOR_FILTER),
           ipAddress(""),
           lastModified(0) {}
 
@@ -51,6 +53,7 @@ struct DeviceConfig {
         if (usedTotal != other.usedTotal) return true;
         if (maxInflow != other.maxInflow) return true;
         if (force_update != other.force_update) return true;
+        if (sensorFilter != other.sensorFilter) return true;
         if (ipAddress != other.ipAddress) return true;
         return false;  // All values identical
     }

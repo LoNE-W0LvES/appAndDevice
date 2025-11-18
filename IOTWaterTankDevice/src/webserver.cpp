@@ -8,7 +8,8 @@ WebServer::WebServer()
       currentPumpStatus(0),
       apiClient(nullptr),
       pumpCallback(nullptr),
-      wifiSaveCallback(nullptr) {
+      wifiSaveCallback(nullptr),
+      configSyncCallback(nullptr) {
 }
 
 void WebServer::begin(const String& devId, APIClient* apiCli) {
@@ -597,6 +598,15 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     force_update["hidden"] = false;
     force_update["lastModified"] = lastModified;
 
+    // Sensor Filter
+    JsonObject sensorFilter = doc.createNestedObject("sensorFilter");
+    sensorFilter["key"] = "sensorFilter";
+    sensorFilter["label"] = "Sensor Filter";
+    sensorFilter["type"] = "boolean";
+    sensorFilter["value"] = deviceConfig.sensorFilter;
+    sensorFilter["description"] = "Enable/disable sensor filtering and smoothing for more stable readings";
+    sensorFilter["lastModified"] = lastModified;
+
     // IP Address
     JsonObject ipAddress = doc.createNestedObject("ip_address");
     ipAddress["key"] = "ip_address";
@@ -685,6 +695,9 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
     if (doc.containsKey("force_update")) {
         incomingConfig.force_update = doc["force_update"]["value"] | deviceConfig.force_update;
     }
+    if (doc.containsKey("sensorFilter")) {
+        incomingConfig.sensorFilter = doc["sensorFilter"]["value"] | deviceConfig.sensorFilter;
+    }
     if (doc.containsKey("ip_address")) {
         incomingConfig.ipAddress = doc["ip_address"]["value"] | deviceConfig.ipAddress;
     }
@@ -699,6 +712,7 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
     if (incomingConfig.usedTotal != deviceConfig.usedTotal) valuesChanged = true;
     if (incomingConfig.maxInflow != deviceConfig.maxInflow) valuesChanged = true;
     if (incomingConfig.force_update != deviceConfig.force_update) valuesChanged = true;
+    if (incomingConfig.sensorFilter != deviceConfig.sensorFilter) valuesChanged = true;
     if (incomingConfig.ipAddress != deviceConfig.ipAddress) valuesChanged = true;
 
     if (!valuesChanged) {
@@ -734,6 +748,12 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
             apiClient->markConfigModified();
         }
 
+        // Trigger immediate sync callback
+        if (configSyncCallback != nullptr) {
+            Serial.println("[WebServer] Triggering immediate config sync...");
+            configSyncCallback();
+        }
+
         Serial.println("[WebServer] Config updated from app (priority)");
         Serial.println("  Upper Threshold: " + String(deviceConfig.upperThreshold));
         Serial.println("  Lower Threshold: " + String(deviceConfig.lowerThreshold));
@@ -760,6 +780,12 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
         // Mark as locally modified (sets device_config_sync_status = false)
         if (apiClient != nullptr) {
             apiClient->markConfigModified();
+        }
+
+        // Trigger immediate sync callback
+        if (configSyncCallback != nullptr) {
+            Serial.println("[WebServer] Triggering immediate config sync...");
+            configSyncCallback();
         }
 
         Serial.println("[WebServer] Config updated from app (LWW)");
@@ -937,6 +963,10 @@ void WebServer::setPumpControlCallback(PumpControlCallback callback) {
 
 void WebServer::setWiFiSaveCallback(WiFiSaveCallback callback) {
     wifiSaveCallback = callback;
+}
+
+void WebServer::setConfigSyncCallback(ConfigSyncCallback callback) {
+    configSyncCallback = callback;
 }
 
 void WebServer::handle() {
