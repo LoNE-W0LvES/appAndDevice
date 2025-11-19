@@ -33,7 +33,8 @@ WebServer::WebServer()
       pumpCallback(nullptr),
       wifiSaveCallback(nullptr),
       configSyncCallback(nullptr),
-      controlSyncCallback(nullptr) {
+      controlSyncCallback(nullptr),
+      timestampSyncCallback(nullptr) {
 }
 
 void WebServer::begin(const String& devId, APIClient* apiCli) {
@@ -883,11 +884,27 @@ void WebServer::handlePostTimestamp(AsyncWebServerRequest* request, uint8_t* dat
         Serial.println("[WebServer] Detected timestamp in milliseconds: " + String((unsigned long)newTimestamp));
     }
 
+    // Validate timestamp (sanity check: must be > 2025-11-19)
+    const uint64_t MIN_VALID_TIMESTAMP = 1763520052526ULL;  // 2025-11-19 approx
+
+    if (newTimestamp < MIN_VALID_TIMESTAMP) {
+        Serial.printf("[WebServer] Timestamp validation failed: %llu < %llu\n", newTimestamp, MIN_VALID_TIMESTAMP);
+        request->send(400, "application/json", "{\"success\":false,\"error\":\"TIMESTAMP_TOO_OLD\"}");
+        jsonBuffer = "";
+        return;
+    }
+
     // Set the timestamp via API client
     if (apiClient != nullptr) {
         apiClient->setTimestamp(newTimestamp);
 
         Serial.println("[WebServer] Time corrected to: " + String(newTimestamp));
+        Serial.println("[WebServer] Timestamp validation passed - device can now go online");
+
+        // Call timestamp sync callback to finalize (mark device as online)
+        if (timestampSyncCallback != nullptr) {
+            timestampSyncCallback(newTimestamp);
+        }
 
         // Send success response
         StaticJsonDocument<256> responseDoc;
@@ -942,6 +959,10 @@ void WebServer::setConfigSyncCallback(ConfigSyncCallback callback) {
 
 void WebServer::setControlSyncCallback(ControlSyncCallback callback) {
     controlSyncCallback = callback;
+}
+
+void WebServer::setTimestampSyncCallback(TimestampSyncCallback callback) {
+    timestampSyncCallback = callback;
 }
 
 void WebServer::setComponentPointers(SensorManager* sm, DisplayManager* dm,

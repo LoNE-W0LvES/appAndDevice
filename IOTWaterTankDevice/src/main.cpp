@@ -72,6 +72,9 @@ unsigned long lastDisplayUpdate = 0;
 // System state
 bool systemInitialized = false;
 bool configFetched = false;
+bool deviceIsOnline = false;       // True when NTP sync successful and device can communicate with server
+int failedCount = 0;               // Count consecutive server request failures (reset deviceIsOnline after 10)
+unsigned long lastNTPRetry = 0;    // Track NTP retry attempts when offline
 
 // FreeRTOS task management
 SemaphoreHandle_t configMutex = NULL;  // Protect deviceConfig and lastSyncedConfig
@@ -94,6 +97,8 @@ void syncConfigToServer();
 void fetchConfigFromServer();
 void uploadControlData();
 void ntpSyncTask(void* parameter);
+bool syncWithInternet();
+void finalizeNTP(uint64_t timestamp);
 
 // ============================================================================
 // CALLBACK FUNCTIONS
@@ -259,6 +264,68 @@ void onWiFiSave(const String& ssid, const String& password,
 }
 
 // ============================================================================
+// INTERNET CONNECTION MANAGEMENT
+// ============================================================================
+
+/**
+ * Synchronize with internet via NTP
+ * Attempts to sync time with NTP servers
+ * Returns true if successful, false otherwise
+ */
+bool syncWithInternet() {
+    Serial.println("[Main] Attempting to sync with internet via NTP...");
+
+    // Don't attempt NTP sync in AP mode (no internet)
+    if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE) {
+        Serial.println("[Main] Cannot sync - not in client mode (no internet)");
+        return false;
+    }
+
+    // Attempt NTP time sync
+    if (apiClient.syncTimeWithServer()) {
+        // Get the synced timestamp
+        uint64_t ntpTimestamp = apiClient.getCurrentTimestamp();
+
+        // Validate timestamp (sanity check: must be > 2025-11-19)
+        const uint64_t MIN_VALID_TIMESTAMP = 1763520052526ULL;  // 2025-11-19 approx
+
+        if (ntpTimestamp > MIN_VALID_TIMESTAMP) {
+            Serial.println("[Main] NTP sync successful!");
+            Serial.printf("[Main] Timestamp: %llu ms\n", ntpTimestamp);
+
+            // Finalize NTP and mark device as online
+            finalizeNTP(ntpTimestamp);
+            return true;
+        } else {
+            Serial.printf("[Main] NTP sync returned invalid timestamp: %llu (expected > %llu)\n",
+                         ntpTimestamp, MIN_VALID_TIMESTAMP);
+            return false;
+        }
+    } else {
+        Serial.println("[Main] NTP sync failed");
+        return false;
+    }
+}
+
+/**
+ * Finalize NTP synchronization
+ * Sets the timestamp and marks device as online
+ */
+void finalizeNTP(uint64_t timestamp) {
+    Serial.println("[Main] Finalizing NTP sync...");
+
+    // Set timestamp in API client
+    apiClient.setTimestamp(timestamp);
+
+    // Mark device as online
+    deviceIsOnline = true;
+    failedCount = 0;  // Reset failure counter
+
+    Serial.println("[Main] Device is now ONLINE");
+    displayManager.showMessage("Online", "Internet OK", 2000);
+}
+
+// ============================================================================
 // INITIALIZATION FUNCTIONS
 // ============================================================================
 
@@ -385,13 +452,36 @@ bool connectToBackend() {
     webServer.setWiFiSaveCallback(onWiFiSave);
     webServer.setConfigSyncCallback(syncConfigToServer);    // Immediate async sync when config changes
     webServer.setControlSyncCallback(uploadControlData);    // Immediate async sync when control changes
+    webServer.setTimestampSyncCallback(finalizeNTP);        // Called when app syncs time
     webServer.setComponentPointers(&sensorManager, &displayManager, &storageManager, &levelCalculator);
 
     Serial.println("[Main] Local webserver started - device accessible at http://" + getIPAddress());
 
     // ============================================================================
-    // Try to authenticate with backend (optional - device works locally without it)
+    // STEP 1: Sync with internet via NTP (MUST succeed before any server requests)
     // ============================================================================
+    Serial.println("[Main] ========================================");
+    Serial.println("[Main] STEP 1: Syncing with internet via NTP");
+    Serial.println("[Main] ========================================");
+
+    displayManager.showMessage("NTP Sync", "Connecting...", 0);
+
+    if (!syncWithInternet()) {
+        Serial.println("[Main] NTP sync failed - device will work locally only");
+        Serial.println("[Main] App can sync time via webserver, or device will retry NTP periodically");
+        displayManager.showMessage("Offline", "No internet", 3000);
+
+        // Device works locally, but deviceIsOnline = false
+        // Periodic sync will retry NTP every 10-20 seconds
+        return true;  // Return true because device is functional locally
+    }
+
+    // ============================================================================
+    // STEP 2: Authenticate with backend (now that we have internet)
+    // ============================================================================
+    Serial.println("[Main] ========================================");
+    Serial.println("[Main] STEP 2: Authenticating with backend");
+    Serial.println("[Main] ========================================");
 
     // Login to get JWT token if not authenticated
     if (!apiClient.isAuthenticated()) {
@@ -402,8 +492,9 @@ bool connectToBackend() {
         if (!hasCredentials || dashUsername.length() == 0 || dashPassword.length() == 0) {
             Serial.println("[Main] WARNING: No dashboard credentials found!");
             Serial.println("[Main] Device will work locally but cannot sync with backend");
-            displayManager.showMessage("Local Mode", "No backend sync", 3000);
-            return false;  // Local mode only
+            displayManager.showMessage("Local Mode", "No credentials", 3000);
+            deviceIsOnline = false;  // Mark as offline since can't authenticate
+            return true;  // Local mode
         }
 
         displayManager.showMessage("Backend", "Logging in...", 0);
@@ -412,61 +503,105 @@ bool connectToBackend() {
             Serial.println("[Main] WARNING: Device login failed!");
             Serial.println("[Main] Device will work locally but cannot sync with backend");
             displayManager.showMessage("Local Mode", "Login failed", 3000);
-            return false;  // Local mode only
+            deviceIsOnline = false;  // Mark as offline since can't authenticate
+            failedCount++;
+            return true;  // Local mode
         }
 
         Serial.println("[Main] Device logged in successfully");
+        displayManager.showMessage("Backend", "Authenticated", 2000);
     }
 
-    // Start NTP time sync in background (non-blocking)
-    // If NTP fails (no internet), app can sync time using phone's timestamp
-    Serial.println("[Main] Starting NTP time sync in background...");
-    displayManager.showMessage("Backend", "Connected", 2000);
+    // ============================================================================
+    // STEP 3: Fetch config from server (only if online)
+    // ============================================================================
+    Serial.println("[Main] ========================================");
+    Serial.println("[Main] STEP 3: Fetching config from server");
+    Serial.println("[Main] ========================================");
 
-    // Create async task for NTP time sync (8192 byte stack for HTTP + time operations)
-    if (ntpSyncTaskHandle == NULL) {
-        BaseType_t result = xTaskCreate(
-            ntpSyncTask,
-            "NTPSync",
-            8192,  // Stack size (bytes) - increased for NTP operations
-            NULL,
-            1,     // Priority
-            &ntpSyncTaskHandle
-        );
+    bool configChanged = false;
+    bool deviceWon = false;
 
-        if (result != pdPASS) {
-            Serial.println("[Main] Failed to create NTP sync task");
-            ntpSyncTaskHandle = NULL;
+    if (apiClient.fetchAndApplyServerConfig(deviceConfig, &configChanged, &deviceWon)) {
+        Serial.println("[Main] Config fetched and merged successfully");
+
+        // If values changed after merge, apply to system components
+        if (configChanged) {
+            Serial.println("[Main] Applying merged config to system components...");
+
+            sensorManager.setTankConfig(
+                deviceConfig.tankHeight,
+                deviceConfig.tankWidth,
+                deviceConfig.tankShape
+            );
+            levelCalculator.setTankConfig(
+                deviceConfig.tankHeight,
+                deviceConfig.tankWidth,
+                deviceConfig.tankShape
+            );
+            displayManager.setTankSettings(
+                deviceConfig.tankHeight,
+                deviceConfig.tankWidth,
+                deviceConfig.tankShape,
+                deviceConfig.upperThreshold,
+                deviceConfig.lowerThreshold
+            );
+
+            // Save to NVS storage for persistence
+            storageManager.saveDeviceConfig(
+                deviceConfig.upperThreshold,
+                deviceConfig.lowerThreshold,
+                deviceConfig.tankHeight,
+                deviceConfig.tankWidth,
+                deviceConfig.tankShape
+            );
+            Serial.println("[Main] Config applied and saved to NVS");
+        } else {
+            Serial.println("[Main] Config values unchanged after merge");
+        }
+
+        // If device values won, sync to server
+        if (deviceWon) {
+            Serial.println("[Main] Device config differs from server - syncing to server...");
+            if (apiClient.sendConfigWithPriority(deviceConfig)) {
+                Serial.println("[Main] Device config synced to server successfully");
+            } else {
+                Serial.println("[Main] Failed to sync device config to server");
+                failedCount++;
+            }
+        }
+
+        configFetched = true;
+        failedCount = 0;  // Reset on success
+    } else {
+        Serial.println("[Main] Failed to fetch config from server - using local config");
+        failedCount++;
+
+        // Load config from NVS storage (fallback)
+        float upperThr, lowerThr, tankH, tankW;
+        String tankSh;
+        if (storageManager.loadDeviceConfig(upperThr, lowerThr, tankH, tankW, tankSh)) {
+            deviceConfig.upperThreshold = upperThr;
+            deviceConfig.lowerThreshold = lowerThr;
+            deviceConfig.tankHeight = tankH;
+            deviceConfig.tankWidth = tankW;
+            deviceConfig.tankShape = tankSh;
+
+            sensorManager.setTankConfig(tankH, tankW, tankSh);
+            levelCalculator.setTankConfig(tankH, tankW, tankSh);
+            displayManager.setTankSettings(tankH, tankW, tankSh, upperThr, lowerThr);
+
+            Serial.println("[Main] Loaded config from NVS storage");
         }
     }
 
     // Initialize last synced config (oldData = newData)
     lastSyncedConfig = deviceConfig;
 
-    configFetched = true;
-
-    // Apply configuration to sensor manager and level calculator
-    sensorManager.setTankConfig(
-        deviceConfig.tankHeight,
-        deviceConfig.tankWidth,
-        deviceConfig.tankShape
-    );
-    levelCalculator.setTankConfig(
-        deviceConfig.tankHeight,
-        deviceConfig.tankWidth,
-        deviceConfig.tankShape
-    );
-
-    // Update display settings
-    displayManager.setTankSettings(
-        deviceConfig.tankHeight,
-        deviceConfig.tankWidth,
-        deviceConfig.tankShape,
-        deviceConfig.upperThreshold,
-        deviceConfig.lowerThreshold
-    );
-
-    Serial.println("[Main] Device online sync complete, config applied");
+    Serial.println("[Main] ========================================");
+    Serial.println("[Main] Boot sequence complete!");
+    Serial.println("[Main] Device is ONLINE and ready");
+    Serial.println("[Main] ========================================");
 
     displayManager.showMessage("Ready", "System online", 2000);
 
@@ -485,9 +620,23 @@ void uploadTelemetryTask(void* parameter) {
     Serial.println("[AsyncTask] Telemetry upload started");
     activeServerTasks++;  // Increment active task counter
 
+    // Don't attempt server calls if device is offline
+    if (!deviceIsOnline) {
+        Serial.println("[AsyncTask] Cannot upload telemetry - device is offline");
+        activeServerTasks--;  // Decrement before exit
+        telemetryTaskHandle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
     // Don't attempt server calls in AP mode (no internet) or when not authenticated
     if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
         Serial.println("[AsyncTask] Cannot upload telemetry - not in client mode or not authenticated");
+        failedCount++;
+        if (failedCount >= 10) {
+            Serial.println("[AsyncTask] 10 consecutive failures - marking device as OFFLINE");
+            deviceIsOnline = false;
+        }
         activeServerTasks--;  // Decrement before exit
         telemetryTaskHandle = NULL;
         vTaskDelete(NULL);
@@ -503,8 +652,14 @@ void uploadTelemetryTask(void* parameter) {
 
     if (apiClient.uploadTelemetry(waterLevelPercent, currInflow, pumpStatus)) {
         Serial.println("[AsyncTask] Telemetry uploaded successfully");
+        failedCount = 0;  // Reset failure counter on success
     } else {
         Serial.println("[AsyncTask] Failed to upload telemetry");
+        failedCount++;
+        if (failedCount >= 10) {
+            Serial.println("[AsyncTask] 10 consecutive failures - marking device as OFFLINE");
+            deviceIsOnline = false;
+        }
     }
 
     activeServerTasks--;  // Decrement after completion
@@ -556,10 +711,25 @@ void uploadControlTask(void* parameter) {
     // Extract the pre-built JSON payload from parameter
     String* jsonPayload = (String*)parameter;
 
+    // Don't attempt server calls if device is offline
+    if (!deviceIsOnline) {
+        Serial.println("[AsyncTask] Cannot upload control - device is offline");
+        delete jsonPayload;  // Free allocated memory before exit
+        activeServerTasks--;  // Decrement before exit
+        controlUploadTaskHandle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
     // Don't attempt server calls in AP mode (no internet) or when not authenticated
     if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
         Serial.println("[AsyncTask] Cannot upload control - not in client mode or not authenticated");
         delete jsonPayload;  // Free allocated memory before exit
+        failedCount++;
+        if (failedCount >= 10) {
+            Serial.println("[AsyncTask] 10 consecutive failures - marking device as OFFLINE");
+            deviceIsOnline = false;
+        }
         activeServerTasks--;  // Decrement before exit
         controlUploadTaskHandle = NULL;
         vTaskDelete(NULL);
@@ -580,8 +750,14 @@ void uploadControlTask(void* parameter) {
     // No race condition because JSON was built synchronously when callback was triggered
     if (apiClient.uploadControlWithPayload(*jsonPayload)) {
         Serial.println("[AsyncTask] Control data uploaded to server successfully");
+        failedCount = 0;  // Reset failure counter on success
     } else {
         Serial.println("[AsyncTask] Failed to upload control data to server");
+        failedCount++;
+        if (failedCount >= 10) {
+            Serial.println("[AsyncTask] 10 consecutive failures - marking device as OFFLINE");
+            deviceIsOnline = false;
+        }
     }
 
     // Free the allocated memory
@@ -600,9 +776,23 @@ void fetchControlDataTask(void* parameter) {
     Serial.println("[AsyncTask] Control fetch started");
     activeServerTasks++;  // Increment active task counter
 
+    // Don't attempt server calls if device is offline
+    if (!deviceIsOnline) {
+        Serial.println("[AsyncTask] Cannot fetch control - device is offline");
+        activeServerTasks--;  // Decrement before exit
+        controlTaskHandle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
     // Don't attempt server calls in AP mode (no internet) or when not authenticated
     if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
         Serial.println("[AsyncTask] Cannot fetch control - not in client mode or not authenticated");
+        failedCount++;
+        if (failedCount >= 10) {
+            Serial.println("[AsyncTask] 10 consecutive failures - marking device as OFFLINE");
+            deviceIsOnline = false;
+        }
         activeServerTasks--;  // Decrement before exit
         controlTaskHandle = NULL;
         vTaskDelete(NULL);
@@ -612,6 +802,7 @@ void fetchControlDataTask(void* parameter) {
     ControlData tempControlData;
     if (apiClient.fetchControl(tempControlData)) {
         Serial.println("[AsyncTask] Control data fetched");
+        failedCount = 0;  // Reset failure counter on success
 
         // Take mutex before updating shared state
         if (xSemaphoreTake(configMutex, portMAX_DELAY) == pdTRUE) {
@@ -706,6 +897,11 @@ void fetchControlDataTask(void* parameter) {
         }
     } else {
         Serial.println("[AsyncTask] Failed to fetch control data");
+        failedCount++;
+        if (failedCount >= 10) {
+            Serial.println("[AsyncTask] 10 consecutive failures - marking device as OFFLINE");
+            deviceIsOnline = false;
+        }
     }
 
     activeServerTasks--;  // Decrement after completion
@@ -721,9 +917,23 @@ void fetchConfigFromServerTask(void* parameter) {
     Serial.println("[AsyncTask] Config fetch started");
     activeServerTasks++;  // Increment active task counter
 
+    // Don't attempt server calls if device is offline
+    if (!deviceIsOnline) {
+        Serial.println("[AsyncTask] Cannot fetch config - device is offline");
+        activeServerTasks--;  // Decrement before exit
+        configFetchTaskHandle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
     // Don't attempt server calls in AP mode (no internet) or when not authenticated
     if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE || !apiClient.isAuthenticated()) {
         Serial.println("[AsyncTask] Cannot fetch config - not in client mode or not authenticated");
+        failedCount++;
+        if (failedCount >= 10) {
+            Serial.println("[AsyncTask] 10 consecutive failures - marking device as OFFLINE");
+            deviceIsOnline = false;
+        }
         activeServerTasks--;  // Decrement before exit
         configFetchTaskHandle = NULL;
         vTaskDelete(NULL);
@@ -748,6 +958,7 @@ void fetchConfigFromServerTask(void* parameter) {
 
         // Fetch latest config from server
         if (apiClient.fetchAndApplyServerConfig(deviceConfig)) {
+            failedCount = 0;  // Reset failure counter on success
             // Check if values actually changed during merge
             bool valuesChanged = deviceConfig.valuesChanged(previousConfig);
 
@@ -811,6 +1022,11 @@ void fetchConfigFromServerTask(void* parameter) {
             }
         } else {
             Serial.println("[AsyncTask] Failed to fetch config from server");
+            failedCount++;
+            if (failedCount >= 10) {
+                Serial.println("[AsyncTask] 10 consecutive failures - marking device as OFFLINE");
+                deviceIsOnline = false;
+            }
         }
 
         xSemaphoreGive(configMutex);
@@ -895,6 +1111,11 @@ void syncConfigToServerTask(void* parameter) {
                     webServer.updateDeviceConfig(deviceConfig);
                 } else {
                     Serial.println("[AsyncTask] Failed to upload config to server");
+                    failedCount++;
+                    if (failedCount >= 10) {
+                        Serial.println("[AsyncTask] 10 consecutive failures - marking device as OFFLINE");
+                        deviceIsOnline = false;
+                    }
                 }
             } else {
                 Serial.println("[AsyncTask] Config values unchanged - skipping sync");
@@ -1334,6 +1555,26 @@ void loop() {
     if (currentTime - lastDisplayUpdate >= DISPLAY_UPDATE_INTERVAL) {
         lastDisplayUpdate = currentTime;
         updateDisplay();
+    }
+
+    // ============================================================================
+    // PERIODIC NTP RETRY WHEN OFFLINE
+    // ============================================================================
+    // If device is offline but WiFi is connected, periodically retry NTP sync
+    if (systemInitialized && !deviceIsOnline && isWiFiConnected() && getWiFiMode() == WIFI_CLIENT_MODE) {
+        const unsigned long NTP_RETRY_INTERVAL = 15000;  // 15 seconds
+
+        if (currentTime - lastNTPRetry >= NTP_RETRY_INTERVAL) {
+            lastNTPRetry = currentTime;
+            Serial.println("[Main] Device is offline - attempting NTP sync...");
+
+            if (syncWithInternet()) {
+                Serial.println("[Main] NTP sync successful - device is now ONLINE");
+                // Device is now online, will start syncing with server on next iteration
+            } else {
+                Serial.println("[Main] NTP sync failed - will retry in " + String(NTP_RETRY_INTERVAL / 1000) + " seconds");
+            }
+        }
     }
 
     // Only perform backend operations if connected, initialized, and in client mode

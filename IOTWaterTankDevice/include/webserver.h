@@ -28,8 +28,9 @@ class LevelCalculator;
 typedef void (*PumpControlCallback)(bool state);
 typedef void (*WiFiSaveCallback)(const String& ssid, const String& password,
                                  const String& dashUser, const String& dashPass);
-typedef void (*ConfigSyncCallback)();   // Called when config changes and needs immediate sync
-typedef void (*ControlSyncCallback)();  // Called when control changes and needs immediate sync
+typedef void (*ConfigSyncCallback)();      // Called when config changes and needs immediate sync
+typedef void (*ControlSyncCallback)();     // Called when control changes and needs immediate sync
+typedef void (*TimestampSyncCallback)(uint64_t timestamp);  // Called when timestamp synced from app
 
 class WebServer {
 public:
@@ -58,6 +59,9 @@ public:
 
     // Set control sync callback (called when control changes and needs immediate sync)
     void setControlSyncCallback(ControlSyncCallback callback);
+
+    // Set timestamp sync callback (called when timestamp synced from app)
+    void setTimestampSyncCallback(TimestampSyncCallback callback);
 
     // Set component pointers for applying config changes
     void setComponentPointers(SensorManager* sm, DisplayManager* dm,
@@ -93,6 +97,7 @@ private:
     WiFiSaveCallback wifiSaveCallback;
     ConfigSyncCallback configSyncCallback;
     ControlSyncCallback controlSyncCallback;
+    TimestampSyncCallback timestampSyncCallback;
 
     // Setup routes
     void setupRoutes();
