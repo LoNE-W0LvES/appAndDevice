@@ -573,6 +573,7 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     autoUpdate["value"] = configHandler.getAutoUpdate();
     autoUpdate["description"] = "When enabled, device will automatically fetch and apply configuration updates from server";
     autoUpdate["system"] = true;
+    autoUpdate["hidden"] = false;
     autoUpdate["lastModified"] = (unsigned long)configHandler.getAutoUpdateTimestamp();
 
     String response;
