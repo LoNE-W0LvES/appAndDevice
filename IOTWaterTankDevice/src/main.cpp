@@ -385,29 +385,11 @@ bool connectToBackend() {
         Serial.println("[Main] Device logged in successfully");
     }
 
-    // Launch async time sync (non-blocking - happens in background)
-    // Device will start working immediately, sync completes in background
+    // Skip time sync at boot to avoid delays
+    // Time sync will happen automatically on first telemetry upload
+    // If time not synced, upload tasks will skip and retry next cycle
     displayManager.showMessage("Backend", "Connected", 2000);
-    Serial.println("[Main] Launching async time sync in background...");
-
-    // Create async task for time sync (non-blocking)
-    xTaskCreate(
-        [](void* param) {
-            APIClient* client = (APIClient*)param;
-            Serial.println("[AsyncTask] Time sync started");
-            if (client->syncTimeWithServer()) {
-                Serial.println("[AsyncTask] Time synced successfully");
-            } else {
-                Serial.println("[AsyncTask] Time sync failed - will retry in periodic tasks");
-            }
-            vTaskDelete(NULL);
-        },
-        "TimeSync",
-        4096,
-        &apiClient,
-        1,
-        nullptr
-    );
+    Serial.println("[Main] Device ready - time sync will happen in background");
 
     // Initialize last synced config (oldData = newData)
     lastSyncedConfig = deviceConfig;
@@ -465,11 +447,16 @@ void uploadTelemetryTask(void* parameter) {
 
     // Don't send data if time is not synced (timestamps would be invalid)
     if (!apiClient.isTimeSynced()) {
-        Serial.println("[AsyncTask] Cannot upload telemetry - time not synced yet");
-        activeServerTasks--;  // Decrement before exit
-        telemetryTaskHandle = NULL;
-        vTaskDelete(NULL);
-        return;
+        Serial.println("[AsyncTask] Time not synced - attempting sync now...");
+        if (apiClient.syncTimeWithServer()) {
+            Serial.println("[AsyncTask] Time synced successfully");
+        } else {
+            Serial.println("[AsyncTask] Time sync failed - skipping telemetry upload");
+            activeServerTasks--;  // Decrement before exit
+            telemetryTaskHandle = NULL;
+            vTaskDelete(NULL);
+            return;
+        }
     }
 
     float waterLevel = levelCalculator.getWaterLevel();
@@ -885,7 +872,7 @@ void uploadTelemetry() {
     BaseType_t result = xTaskCreate(
         uploadTelemetryTask,     // Task function
         "TelemetryUpload",       // Task name
-        4096,                    // Stack size (bytes)
+        8192,                    // Stack size (bytes) - increased for HTTP + time sync
         NULL,                    // Task parameters
         1,                       // Priority (1 = low, higher than idle)
         &telemetryTaskHandle     // Task handle
