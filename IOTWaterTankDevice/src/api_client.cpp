@@ -447,7 +447,7 @@ bool APIClient::configValuesChanged(const DeviceConfig& a, const DeviceConfig& b
     return deviceConfigManager.configValuesChanged(a, b);
 }
 
-bool APIClient::fetchAndApplyServerConfig(DeviceConfig& config) {
+bool APIClient::fetchAndApplyServerConfig(DeviceConfig& config, bool* changed, bool* deviceWon) {
     if (!authenticated) {
         Serial.println("[API] Not authenticated, cannot fetch config");
         return false;
@@ -491,7 +491,18 @@ bool APIClient::fetchAndApplyServerConfig(DeviceConfig& config) {
     );
 
     // Perform 3-way merge
-    bool changed = configHandler.merge();
+    bool valuesChanged = configHandler.merge();
+
+    // Check if merged values differ from API (device values won the merge)
+    bool deviceValuesWon = configHandler.valuesDifferFromAPI();
+
+    // Set output parameters if provided
+    if (changed != nullptr) {
+        *changed = valuesChanged;
+    }
+    if (deviceWon != nullptr) {
+        *deviceWon = deviceValuesWon;
+    }
 
     // Return merged values
     config.upperThreshold = configHandler.getUpperThreshold();
@@ -515,8 +526,11 @@ bool APIClient::fetchAndApplyServerConfig(DeviceConfig& config) {
     config.auto_update = configHandler.getAutoUpdate();
     config.autoUpdateLastModified = configHandler.getAutoUpdateTimestamp();
 
-    if (changed) {
+    if (valuesChanged) {
         Serial.println("[API] Config values changed after 3-way merge");
+    }
+    if (deviceValuesWon) {
+        Serial.println("[API] Device values won merge - will need to sync to server");
     }
 
     return true;

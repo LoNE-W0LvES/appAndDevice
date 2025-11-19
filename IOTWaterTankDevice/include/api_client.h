@@ -61,9 +61,11 @@ public:
     // CONFIGURATION SYNC (Priority-Based Conflict Resolution)
     // ========================================================================
 
-    // Fetch config FROM server and apply if values changed
-    // Used when device_config_sync_status = true (no local changes)
-    bool fetchAndApplyServerConfig(DeviceConfig& config);
+    // Fetch config FROM server and apply 3-way merge
+    // Returns: true if fetch succeeded
+    // changed: set to true if merge changed values from current
+    // deviceWon: set to true if device values won (need to send to server)
+    bool fetchAndApplyServerConfig(DeviceConfig& config, bool* changed = nullptr, bool* deviceWon = nullptr);
 
     // Send config TO server with priority (lastModified = 0)
     // Used when device_config_sync_status = false (local changes pending)

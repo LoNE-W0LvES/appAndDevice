@@ -194,26 +194,56 @@ void onWiFiSave(const String& ssid, const String& password,
             }
         }
 
-        // Try to fetch config from server (works even if registration failed)
-        if (apiClient.fetchAndApplyServerConfig(deviceConfig)) {
-            sensorManager.setTankConfig(
-                deviceConfig.tankHeight,
-                deviceConfig.tankWidth,
-                deviceConfig.tankShape
-            );
-            levelCalculator.setTankConfig(
-                deviceConfig.tankHeight,
-                deviceConfig.tankWidth,
-                deviceConfig.tankShape
-            );
+        // Fetch config from server and perform 3-way merge
+        bool configChanged = false;
+        bool deviceWon = false;
+        if (apiClient.fetchAndApplyServerConfig(deviceConfig, &configChanged, &deviceWon)) {
+            Serial.println("[Main] Config fetched and merged successfully");
 
-            displayManager.setTankSettings(
-                deviceConfig.tankHeight,
-                deviceConfig.tankWidth,
-                deviceConfig.tankShape,
-                deviceConfig.upperThreshold,
-                deviceConfig.lowerThreshold
-            );
+            // If values changed after merge, apply to system components
+            if (configChanged) {
+                Serial.println("[Main] Applying merged config to system components...");
+
+                sensorManager.setTankConfig(
+                    deviceConfig.tankHeight,
+                    deviceConfig.tankWidth,
+                    deviceConfig.tankShape
+                );
+                levelCalculator.setTankConfig(
+                    deviceConfig.tankHeight,
+                    deviceConfig.tankWidth,
+                    deviceConfig.tankShape
+                );
+                displayManager.setTankSettings(
+                    deviceConfig.tankHeight,
+                    deviceConfig.tankWidth,
+                    deviceConfig.tankShape,
+                    deviceConfig.upperThreshold,
+                    deviceConfig.lowerThreshold
+                );
+
+                // Save to NVS storage for persistence
+                storageManager.saveDeviceConfig(
+                    deviceConfig.upperThreshold,
+                    deviceConfig.lowerThreshold,
+                    deviceConfig.tankHeight,
+                    deviceConfig.tankWidth,
+                    deviceConfig.tankShape
+                );
+                Serial.println("[Main] Config applied and saved to NVS");
+            } else {
+                Serial.println("[Main] Config values unchanged after merge");
+            }
+
+            // If device values won, sync to server
+            if (deviceWon) {
+                Serial.println("[Main] Device config differs from server - syncing to server...");
+                if (apiClient.sendConfigWithPriority(deviceConfig)) {
+                    Serial.println("[Main] Device config synced to server successfully");
+                } else {
+                    Serial.println("[Main] Failed to sync device config to server");
+                }
+            }
         }
 
         systemInitialized = true;
