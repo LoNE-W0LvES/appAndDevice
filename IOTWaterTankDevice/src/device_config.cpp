@@ -106,6 +106,7 @@ bool DeviceConfigManager::configValuesChanged(const DeviceConfig& a, const Devic
     if (a.maxInflow != b.maxInflow) return true;
     if (a.force_update != b.force_update) return true;
     if (a.ipAddress != b.ipAddress) return true;
+    if (a.auto_update != b.auto_update) return true;
 
     // All values identical
     return false;
@@ -245,9 +246,11 @@ bool DeviceConfigManager::parseConfig(const String& json, DeviceConfig& config) 
         config.force_update = deviceConfig["force_update"]["value"] | false;
         config.forceUpdateLastModified = deviceConfig["force_update"]["lastModified"] | (uint64_t)0;
 
-
         config.ipAddress = deviceConfig["ip_address"]["value"] | "";
         config.ipAddressLastModified = deviceConfig["ip_address"]["lastModified"] | (uint64_t)0;
+
+        config.auto_update = deviceConfig["auto_update"]["value"] | true;
+        config.autoUpdateLastModified = deviceConfig["auto_update"]["lastModified"] | (uint64_t)0;
     } else {
         // Direct format: {upperThreshold: 95, lowerThreshold: 20, ...}
         config.upperThreshold = deviceConfig["upperThreshold"] | DEFAULT_UPPER_THRESHOLD;
@@ -274,9 +277,11 @@ bool DeviceConfigManager::parseConfig(const String& json, DeviceConfig& config) 
         config.force_update = deviceConfig["force_update"] | false;
         config.forceUpdateLastModified = 0;
 
-
         config.ipAddress = deviceConfig["ip_address"] | "";
         config.ipAddressLastModified = 0;
+
+        config.auto_update = deviceConfig["auto_update"] | true;
+        config.autoUpdateLastModified = 0;
     }
 
     return true;
@@ -353,6 +358,13 @@ String DeviceConfigManager::buildConfigPayload(const DeviceConfig& config, bool 
     ipAddress["type"] = "string";
     ipAddress["value"] = config.ipAddress;
     ipAddress["lastModified"] = priority ? 0 : (unsigned long)config.ipAddressLastModified;
+
+    JsonObject autoUpdate = configUpdates.createNestedObject("auto_update");
+    autoUpdate["key"] = "auto_update";
+    autoUpdate["label"] = "Auto Update Configuration";
+    autoUpdate["type"] = "boolean";
+    autoUpdate["value"] = config.auto_update;
+    autoUpdate["lastModified"] = priority ? 0 : (unsigned long)config.autoUpdateLastModified;
 
     String payload;
     serializeJson(doc, payload);

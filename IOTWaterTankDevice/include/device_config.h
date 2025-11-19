@@ -44,6 +44,9 @@ struct DeviceConfig {
     String ipAddress;
     uint64_t ipAddressLastModified;
 
+    bool auto_update;
+    uint64_t autoUpdateLastModified;
+
     // Constructor to initialize all fields to default values
     DeviceConfig()
         : upperThreshold(0.0f),
@@ -65,7 +68,9 @@ struct DeviceConfig {
           sensorFilter(DEFAULT_SENSOR_FILTER),
           sensorFilterLastModified(0),
           ipAddress(""),
-          ipAddressLastModified(0) {}
+          ipAddressLastModified(0),
+          auto_update(true),
+          autoUpdateLastModified(0) {}
 
     // Check if config values have changed (excluding timestamps)
     // Returns true if any value is different
@@ -80,6 +85,7 @@ struct DeviceConfig {
         if (force_update != other.force_update) return true;
         if (sensorFilter != other.sensorFilter) return true;
         if (ipAddress != other.ipAddress) return true;
+        if (auto_update != other.auto_update) return true;
         return false;  // All values identical
     }
 };

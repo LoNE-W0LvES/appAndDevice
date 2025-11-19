@@ -650,6 +650,23 @@ void fetchControlDataTask(void* parameter) {
                     } else {
                         Serial.println("[AsyncTask] Config fetched but values unchanged - skipping save");
                     }
+
+                    // Reset config_update flag to false after processing
+                    Serial.println("[AsyncTask] Resetting config_update flag to false...");
+                    controlHandler.setConfigUpdate(false, apiClient.getCurrentTimestamp());
+
+                    // Upload control data to inform server that config_update has been processed
+                    ControlData resetControl;
+                    resetControl.pumpSwitch = controlHandler.getPumpSwitch();
+                    resetControl.pumpSwitchLastModified = controlHandler.getPumpSwitchTimestamp();
+                    resetControl.config_update = false;  // Reset to false
+                    resetControl.configUpdateLastModified = apiClient.getCurrentTimestamp();
+
+                    if (apiClient.uploadControl(resetControl)) {
+                        Serial.println("[AsyncTask] config_update flag reset successfully");
+                    } else {
+                        Serial.println("[AsyncTask] Failed to reset config_update flag");
+                    }
                 }
             }
 
@@ -1300,9 +1317,14 @@ void loop() {
 
         // Fetch config from server periodically (every 30 seconds)
         // Note: Sync TO server is now immediate (triggered by callback when config changes)
+        // Only fetch if auto_update is enabled (config_update command always works regardless)
         if (currentTime - lastConfigCheck >= TELEMETRY_UPLOAD_INTERVAL) {
             lastConfigCheck = currentTime;
-            fetchConfigFromServer();
+            if (deviceConfig.auto_update) {
+                fetchConfigFromServer();
+            } else {
+                Serial.println("[Main] Skipping periodic config fetch - auto_update disabled");
+            }
         }
 
         // Fetch control data (every 5 minutes)
