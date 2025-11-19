@@ -3,6 +3,10 @@
 #include "handle_control_data.h"
 #include "handle_config_data.h"
 #include "handle_telemetry_data.h"
+#include "sensor_manager.h"
+#include "display_manager.h"
+#include "storage_manager.h"
+#include "calculate_level.h"
 
 // External references to global handlers (defined in main.cpp)
 extern ControlDataHandler controlHandler;
