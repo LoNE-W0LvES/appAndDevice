@@ -497,11 +497,11 @@ void uploadTelemetryTask(void* parameter) {
     // Telemetry doesn't need time sync - it's just sensor data for monitoring
     // Time sync is only needed for control/config uploads (conflict resolution)
 
-    float waterLevel = levelCalculator.getWaterLevel();
+    float waterLevelPercent = levelCalculator.getWaterLevelPercent();
     float currInflow = sensorManager.getCurrentInflow();
     int pumpStatus = relayController.getPumpStatus();
 
-    if (apiClient.uploadTelemetry(waterLevel, currInflow, pumpStatus)) {
+    if (apiClient.uploadTelemetry(waterLevelPercent, currInflow, pumpStatus)) {
         Serial.println("[AsyncTask] Telemetry uploaded successfully");
     } else {
         Serial.println("[AsyncTask] Failed to upload telemetry");
@@ -919,7 +919,6 @@ void syncConfigToServerTask(void* parameter) {
 void updateSensors() {
     sensorManager.update();
 
-    float waterLevel = levelCalculator.getWaterLevel();
     float waterLevelPercent = levelCalculator.getWaterLevelPercent();
     float currInflow = sensorManager.getCurrentInflow();
 
@@ -930,9 +929,9 @@ void updateSensors() {
         deviceConfig.lowerThreshold
     );
 
-    // Update web server data
+    // Update web server data (send percentage for telemetry)
     int pumpStatus = relayController.getPumpStatus();
-    webServer.updateSensorData(waterLevel, currInflow, pumpStatus);
+    webServer.updateSensorData(waterLevelPercent, currInflow, pumpStatus);
 }
 
 /**
