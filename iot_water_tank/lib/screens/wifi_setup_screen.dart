@@ -376,63 +376,59 @@ class _WiFiSetupScreenState extends State<WiFiSetupScreen> {
             onChanged: (value) => provider.setPassword(value),
           ),
 
-          // Dashboard Credentials section (hidden in offline mode)
-          if (!_isOfflineMode) ...[
-            const SizedBox(height: 24),
+          // Dashboard Credentials section
+          const SizedBox(height: 24),
 
-            Text(
-              'Dashboard Credentials',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+          Text(
+            'Dashboard Credentials',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
             ),
-            const SizedBox(height: 12),
+          ),
+          const SizedBox(height: 12),
 
-            // Dashboard Username field
-            TextField(
-              controller: _dashboardUsernameController,
-              decoration: InputDecoration(
-                labelText: 'Dashboard Username',
-                hintText: 'Enter dashboard username',
-                prefixIcon: const Icon(Icons.person),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                filled: true,
-                fillColor: isDark ? const Color(0xFF1F2937) : Colors.white,
+          // Dashboard Username field
+          TextField(
+            controller: _dashboardUsernameController,
+            decoration: InputDecoration(
+              labelText: 'Dashboard Username',
+              hintText: 'Enter dashboard username',
+              prefixIcon: const Icon(Icons.person),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
-              onChanged: (value) => provider.setDashboardUsername(value),
+              filled: true,
+              fillColor: isDark ? const Color(0xFF1F2937) : Colors.white,
             ),
+            onChanged: (value) => provider.setDashboardUsername(value),
+          ),
 
-            const SizedBox(height: 16),
+          const SizedBox(height: 16),
 
-            // Dashboard Password field
-            TextField(
-              controller: _dashboardPasswordController,
-              obscureText: !provider.isDashboardPasswordVisible,
-              decoration: InputDecoration(
-                labelText: 'Dashboard Password',
-                hintText: 'Enter dashboard password',
-                prefixIcon: const Icon(Icons.vpn_key),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    provider.isDashboardPasswordVisible ? Icons.visibility_off : Icons.visibility,
-                  ),
-                  onPressed: provider.toggleDashboardPasswordVisibility,
+          // Dashboard Password field
+          TextField(
+            controller: _dashboardPasswordController,
+            obscureText: !provider.isDashboardPasswordVisible,
+            decoration: InputDecoration(
+              labelText: 'Dashboard Password',
+              hintText: 'Enter dashboard password',
+              prefixIcon: const Icon(Icons.vpn_key),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  provider.isDashboardPasswordVisible ? Icons.visibility_off : Icons.visibility,
                 ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                filled: true,
-                fillColor: isDark ? const Color(0xFF1F2937) : Colors.white,
+                onPressed: provider.toggleDashboardPasswordVisibility,
               ),
-              onChanged: (value) => provider.setDashboardPassword(value),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              filled: true,
+              fillColor: isDark ? const Color(0xFF1F2937) : Colors.white,
             ),
+            onChanged: (value) => provider.setDashboardPassword(value),
+          ),
 
-            const SizedBox(height: 24),
-          ] else ...[
-            const SizedBox(height: 24),
-          ],
+          const SizedBox(height: 24),
 
           // Error message
           if (provider.error != null)
