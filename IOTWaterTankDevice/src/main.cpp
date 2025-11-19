@@ -93,6 +93,7 @@ volatile int activeServerTasks = 0;     // Counter for active server tasks
 void syncConfigToServer();
 void fetchConfigFromServer();
 void uploadControlData();
+void ntpSyncTask(void* parameter);
 
 // ============================================================================
 // CALLBACK FUNCTIONS
@@ -653,14 +654,14 @@ void fetchControlDataTask(void* parameter) {
 
                     // Reset config_update flag to false after processing
                     Serial.println("[AsyncTask] Resetting config_update flag to false...");
-                    controlHandler.setConfigUpdate(false, apiClient.getCurrentTimestamp());
+                    controlHandler.setConfigUpdatePriority(false);
 
                     // Upload control data to inform server that config_update has been processed
                     ControlData resetControl;
                     resetControl.pumpSwitch = controlHandler.getPumpSwitch();
                     resetControl.pumpSwitchLastModified = controlHandler.getPumpSwitchTimestamp();
                     resetControl.config_update = false;  // Reset to false
-                    resetControl.configUpdateLastModified = apiClient.getCurrentTimestamp();
+                    resetControl.configUpdateLastModified = 0;  // Priority flag
 
                     if (apiClient.uploadControl(resetControl)) {
                         Serial.println("[AsyncTask] config_update flag reset successfully");
