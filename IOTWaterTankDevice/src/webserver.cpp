@@ -565,6 +565,16 @@ void WebServer::handleGetDeviceConfig(AsyncWebServerRequest* request) {
     ipAddress["system"] = true;
     ipAddress["lastModified"] = (unsigned long)configHandler.getIpAddressTimestamp();
 
+    // Auto Update
+    JsonObject autoUpdate = doc.createNestedObject("auto_update");
+    autoUpdate["key"] = "auto_update";
+    autoUpdate["label"] = "Auto Update Configuration";
+    autoUpdate["type"] = "boolean";
+    autoUpdate["value"] = configHandler.getAutoUpdate();
+    autoUpdate["description"] = "When enabled, device will automatically fetch and apply configuration updates from server";
+    autoUpdate["system"] = true;
+    autoUpdate["lastModified"] = (unsigned long)configHandler.getAutoUpdateTimestamp();
+
     String response;
     serializeJson(doc, response);
 
@@ -640,9 +650,11 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
     bool localForceUpdate = doc["force_update"]["value"] | configHandler.getForceUpdate();
     uint64_t localForceUpdateTs = doc["force_update"]["lastModified"] | currentTime;
 
-
     String localIpAddress = doc["ip_address"]["value"] | configHandler.getIpAddress();
     uint64_t localIpAddressTs = doc["ip_address"]["lastModified"] | currentTime;
+
+    bool localAutoUpdate = doc["auto_update"]["value"] | configHandler.getAutoUpdate();
+    uint64_t localAutoUpdateTs = doc["auto_update"]["lastModified"] | currentTime;
 
     // Update handler with values from Local (app webserver)
     configHandler.updateFromLocal(
@@ -654,7 +666,8 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
         localUsedTotal, localUsedTotalTs,
         localMaxInflow, localMaxInflowTs,
         localForceUpdate, localForceUpdateTs,
-        localIpAddress, localIpAddressTs
+        localIpAddress, localIpAddressTs,
+        localAutoUpdate, localAutoUpdateTs
     );
 
     // Perform 3-way merge (API vs Local vs Self)
@@ -681,6 +694,8 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
         deviceConfig.forceUpdateLastModified = configHandler.getForceUpdateTimestamp();
         deviceConfig.ipAddress = configHandler.getIpAddress();
         deviceConfig.ipAddressLastModified = configHandler.getIpAddressTimestamp();
+        deviceConfig.auto_update = configHandler.getAutoUpdate();
+        deviceConfig.autoUpdateLastModified = configHandler.getAutoUpdateTimestamp();
         xSemaphoreGive(configMutex);
     }
 

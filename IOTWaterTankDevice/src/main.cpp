@@ -270,7 +270,7 @@ void initializeSystem() {
 
         // Update config handler with loaded values
         configHandler.updateSelf(upperThr, lowerThr, tankH, tankW, tankSh,
-                                 0.0f, 0.0f, false, "");
+                                 0.0f, 0.0f, false, "", true);
 
         // Also update old deviceConfig for backward compatibility
         deviceConfig.upperThreshold = upperThr;

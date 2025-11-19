@@ -13,6 +13,7 @@ void ConfigDataHandler::begin() {
     maxInflow.value = 0.0f;
     forceUpdate.value = false;
     ipAddress.value = "";
+    autoUpdate.value = true;
 
     DEBUG_PRINTLN("[ConfigHandler] Initialized with defaults");
 }
@@ -25,7 +26,8 @@ void ConfigDataHandler::updateFromAPI(float api_upperThreshold, uint64_t api_upp
                                        float api_usedTotal, uint64_t api_usedTotal_ts,
                                        float api_maxInflow, uint64_t api_maxInflow_ts,
                                        bool api_forceUpdate, uint64_t api_forceUpdate_ts,
-                                       const String& api_ipAddress, uint64_t api_ipAddress_ts) {
+                                       const String& api_ipAddress, uint64_t api_ipAddress_ts,
+                                       bool api_autoUpdate, uint64_t api_autoUpdate_ts) {
     upperThreshold.api_value = api_upperThreshold;
     upperThreshold.api_lastModified = api_upperThreshold_ts;
 
@@ -50,9 +52,11 @@ void ConfigDataHandler::updateFromAPI(float api_upperThreshold, uint64_t api_upp
     forceUpdate.api_value = api_forceUpdate;
     forceUpdate.api_lastModified = api_forceUpdate_ts;
 
-
     ipAddress.api_value = api_ipAddress;
     ipAddress.api_lastModified = api_ipAddress_ts;
+
+    autoUpdate.api_value = api_autoUpdate;
+    autoUpdate.api_lastModified = api_autoUpdate_ts;
 
     DEBUG_PRINTLN("[ConfigHandler] Updated from API");
 }
@@ -65,7 +69,8 @@ void ConfigDataHandler::updateFromLocal(float local_upperThreshold, uint64_t loc
                                          float local_usedTotal, uint64_t local_usedTotal_ts,
                                          float local_maxInflow, uint64_t local_maxInflow_ts,
                                          bool local_forceUpdate, uint64_t local_forceUpdate_ts,
-                                         const String& local_ipAddress, uint64_t local_ipAddress_ts) {
+                                         const String& local_ipAddress, uint64_t local_ipAddress_ts,
+                                         bool local_autoUpdate, uint64_t local_autoUpdate_ts) {
     upperThreshold.local_value = local_upperThreshold;
     upperThreshold.local_lastModified = local_upperThreshold_ts;
 
@@ -90,9 +95,11 @@ void ConfigDataHandler::updateFromLocal(float local_upperThreshold, uint64_t loc
     forceUpdate.local_value = local_forceUpdate;
     forceUpdate.local_lastModified = local_forceUpdate_ts;
 
-
     ipAddress.local_value = local_ipAddress;
     ipAddress.local_lastModified = local_ipAddress_ts;
+
+    autoUpdate.local_value = local_autoUpdate;
+    autoUpdate.local_lastModified = local_autoUpdate_ts;
 
     DEBUG_PRINTLN("[ConfigHandler] Updated from Local");
 }
@@ -101,7 +108,7 @@ void ConfigDataHandler::updateSelf(float self_upperThreshold, float self_lowerTh
                                     float self_tankHeight, float self_tankWidth,
                                     const String& self_tankShape, float self_usedTotal,
                                     float self_maxInflow, bool self_forceUpdate,
-                                    const String& self_ipAddress) {
+                                    const String& self_ipAddress, bool self_autoUpdate) {
     uint64_t now = millis();
 
     upperThreshold.value = self_upperThreshold;
@@ -128,9 +135,11 @@ void ConfigDataHandler::updateSelf(float self_upperThreshold, float self_lowerTh
     forceUpdate.value = self_forceUpdate;
     forceUpdate.lastModified = now;
 
-
     ipAddress.value = self_ipAddress;
     ipAddress.lastModified = now;
+
+    autoUpdate.value = self_autoUpdate;
+    autoUpdate.lastModified = now;
 
     DEBUG_PRINTLN("[ConfigHandler] Updated self");
 }
@@ -148,6 +157,7 @@ bool ConfigDataHandler::merge() {
     changed |= SyncMerge::mergeFloat(maxInflow);
     changed |= SyncMerge::mergeBool(forceUpdate);
     changed |= SyncMerge::mergeString(ipAddress);
+    changed |= SyncMerge::mergeBool(autoUpdate);
 
     if (changed) {
         DEBUG_PRINTLN("[ConfigHandler] Config values changed after merge");
@@ -167,6 +177,7 @@ void ConfigDataHandler::setAllPriority() {
     maxInflow.lastModified = 0;
     forceUpdate.lastModified = 0;
     ipAddress.lastModified = 0;
+    autoUpdate.lastModified = 0;
 
     DEBUG_PRINTLN("[ConfigHandler] Set all config fields with priority flag");
 }
@@ -219,6 +230,11 @@ bool ConfigDataHandler::valuesDifferFromAPI() const {
     if (ipAddress.value != ipAddress.api_value) {
         DEBUG_PRINTF("[ConfigHandler] ipAddress differs: value=%s, api_value=%s\n",
                      ipAddress.value.c_str(), ipAddress.api_value.c_str());
+        return true;
+    }
+    if (autoUpdate.value != autoUpdate.api_value) {
+        DEBUG_PRINTF("[ConfigHandler] autoUpdate differs: value=%d, api_value=%d\n",
+                     autoUpdate.value, autoUpdate.api_value);
         return true;
     }
 

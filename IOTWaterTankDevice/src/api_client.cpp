@@ -473,6 +473,7 @@ bool APIClient::fetchAndApplyServerConfig(DeviceConfig& config) {
         if (apiConfig.maxInflowLastModified == 0) apiConfig.maxInflowLastModified = currentTime;
         if (apiConfig.forceUpdateLastModified == 0) apiConfig.forceUpdateLastModified = currentTime;
         if (apiConfig.ipAddressLastModified == 0) apiConfig.ipAddressLastModified = currentTime;
+        if (apiConfig.autoUpdateLastModified == 0) apiConfig.autoUpdateLastModified = currentTime;
     }
 
     // Update handler with API values
@@ -485,7 +486,8 @@ bool APIClient::fetchAndApplyServerConfig(DeviceConfig& config) {
         apiConfig.usedTotal, apiConfig.usedTotalLastModified,
         apiConfig.maxInflow, apiConfig.maxInflowLastModified,
         apiConfig.force_update, apiConfig.forceUpdateLastModified,
-        apiConfig.ipAddress, apiConfig.ipAddressLastModified
+        apiConfig.ipAddress, apiConfig.ipAddressLastModified,
+        apiConfig.auto_update, apiConfig.autoUpdateLastModified
     );
 
     // Perform 3-way merge
@@ -510,6 +512,8 @@ bool APIClient::fetchAndApplyServerConfig(DeviceConfig& config) {
     config.forceUpdateLastModified = configHandler.getForceUpdateTimestamp();
     config.ipAddress = configHandler.getIpAddress();
     config.ipAddressLastModified = configHandler.getIpAddressTimestamp();
+    config.auto_update = configHandler.getAutoUpdate();
+    config.autoUpdateLastModified = configHandler.getAutoUpdateTimestamp();
 
     if (changed) {
         Serial.println("[API] Config values changed after 3-way merge");
