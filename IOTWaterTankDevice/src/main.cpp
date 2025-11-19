@@ -355,6 +355,7 @@ bool connectToBackend() {
     webServer.setWiFiSaveCallback(onWiFiSave);
     webServer.setConfigSyncCallback(syncConfigToServer);    // Immediate async sync when config changes
     webServer.setControlSyncCallback(uploadControlData);    // Immediate async sync when control changes
+    webServer.setComponentPointers(&sensorManager, &displayManager, &storageManager, &levelCalculator);
 
     Serial.println("[Main] Local webserver started - device accessible at http://" + getIPAddress());
 

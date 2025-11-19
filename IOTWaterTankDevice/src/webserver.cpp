@@ -22,6 +22,10 @@ WebServer::WebServer()
       currentInflow(0),
       currentPumpStatus(0),
       apiClient(nullptr),
+      sensorManager(nullptr),
+      displayManager(nullptr),
+      storageManager(nullptr),
+      levelCalculator(nullptr),
       pumpCallback(nullptr),
       wifiSaveCallback(nullptr),
       configSyncCallback(nullptr),
@@ -706,6 +710,50 @@ void WebServer::handlePostDeviceConfig(AsyncWebServerRequest* request, uint8_t* 
     Serial.println("  Tank Width: " + String(configHandler.getTankWidth()));
     if (changed) {
         Serial.println("  Merge result: Values changed after 3-way merge");
+
+        // Apply configuration to system components
+        Serial.println("[WebServer] Applying config changes to system components...");
+
+        // Update sensor manager with tank config
+        if (sensorManager != nullptr) {
+            sensorManager->setTankConfig(
+                configHandler.getTankHeight(),
+                configHandler.getTankWidth(),
+                configHandler.getTankShape()
+            );
+        }
+
+        // Update level calculator with tank config
+        if (levelCalculator != nullptr) {
+            levelCalculator->setTankConfig(
+                configHandler.getTankHeight(),
+                configHandler.getTankWidth(),
+                configHandler.getTankShape()
+            );
+        }
+
+        // Update display manager with settings
+        if (displayManager != nullptr) {
+            displayManager->setTankSettings(
+                configHandler.getTankHeight(),
+                configHandler.getTankWidth(),
+                configHandler.getTankShape(),
+                configHandler.getUpperThreshold(),
+                configHandler.getLowerThreshold()
+            );
+        }
+
+        // Save config to NVS for persistence
+        if (storageManager != nullptr) {
+            storageManager->saveDeviceConfig(
+                configHandler.getUpperThreshold(),
+                configHandler.getLowerThreshold(),
+                configHandler.getTankHeight(),
+                configHandler.getTankWidth(),
+                configHandler.getTankShape()
+            );
+            Serial.println("[WebServer] Config saved to NVS storage");
+        }
     }
 
     // Trigger config sync callback if provided
@@ -890,6 +938,15 @@ void WebServer::setConfigSyncCallback(ConfigSyncCallback callback) {
 
 void WebServer::setControlSyncCallback(ControlSyncCallback callback) {
     controlSyncCallback = callback;
+}
+
+void WebServer::setComponentPointers(SensorManager* sm, DisplayManager* dm,
+                                      StorageManager* stg, LevelCalculator* lc) {
+    sensorManager = sm;
+    displayManager = dm;
+    storageManager = stg;
+    levelCalculator = lc;
+    Serial.println("[WebServer] Component pointers set for config application");
 }
 
 void WebServer::handle() {

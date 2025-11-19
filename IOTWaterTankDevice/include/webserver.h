@@ -18,6 +18,12 @@
 #include "config.h"
 #include "api_client.h"
 
+// Forward declarations
+class SensorManager;
+class DisplayManager;
+class StorageManager;
+class LevelCalculator;
+
 // Callback function types
 typedef void (*PumpControlCallback)(bool state);
 typedef void (*WiFiSaveCallback)(const String& ssid, const String& password,
@@ -53,6 +59,10 @@ public:
     // Set control sync callback (called when control changes and needs immediate sync)
     void setControlSyncCallback(ControlSyncCallback callback);
 
+    // Set component pointers for applying config changes
+    void setComponentPointers(SensorManager* sm, DisplayManager* dm,
+                              StorageManager* stg, LevelCalculator* lc);
+
     // Handle server (called in loop if needed)
     void handle();
 
@@ -71,6 +81,12 @@ private:
     // Device ID and API client
     String deviceId;
     APIClient* apiClient;
+
+    // Component pointers for applying config changes
+    SensorManager* sensorManager;
+    DisplayManager* displayManager;
+    StorageManager* storageManager;
+    LevelCalculator* levelCalculator;
 
     // Callbacks
     PumpControlCallback pumpCallback;
