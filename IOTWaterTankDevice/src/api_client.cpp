@@ -651,15 +651,16 @@ bool APIClient::uploadTelemetry(float waterLevel, float currInflow, int pumpStat
 bool APIClient::syncTimeWithServer() {
     Serial.println("[API] Syncing time via NTP...");
 
-    // Configure NTP - Use pool.ntp.org (similar to time.windows.com)
-    // GMT offset: 0 (we'll use UTC), Daylight offset: 0
-    const char* ntpServer1 = "pool.ntp.org";
-    const char* ntpServer2 = "time.nist.gov";
+    // Configure NTP - Use multiple reliable servers
+    // Google NTP is usually more reliable and less likely to be blocked
+    const char* ntpServer1 = "time.google.com";
+    const char* ntpServer2 = "pool.ntp.org";
+    const char* ntpServer3 = "time.nist.gov";
     const long gmtOffset_sec = 0;       // UTC timezone
     const int daylightOffset_sec = 0;   // No daylight saving
 
     // Configure time sync with NTP servers
-    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer1, ntpServer2);
+    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer1, ntpServer2, ntpServer3);
 
     // Wait for time to sync (max 10 seconds)
     Serial.println("[API] Waiting for NTP time sync...");
