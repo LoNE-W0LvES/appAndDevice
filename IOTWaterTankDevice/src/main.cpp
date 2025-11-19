@@ -80,6 +80,7 @@ TaskHandle_t controlTaskHandle = NULL;
 TaskHandle_t controlUploadTaskHandle = NULL;
 TaskHandle_t configFetchTaskHandle = NULL;
 TaskHandle_t configSyncTaskHandle = NULL;
+TaskHandle_t ntpSyncTaskHandle = NULL;
 
 // Task limiting to prevent too many concurrent tasks
 #define MAX_CONCURRENT_SERVER_TASKS 2  // Maximum 2 server tasks at once
@@ -385,11 +386,27 @@ bool connectToBackend() {
         Serial.println("[Main] Device logged in successfully");
     }
 
-    // Skip time sync at boot to avoid delays
-    // Time sync will happen automatically on first telemetry upload
-    // If time not synced, upload tasks will skip and retry next cycle
+    // Start NTP time sync in background (non-blocking)
+    // If NTP fails (no internet), app can sync time using phone's timestamp
+    Serial.println("[Main] Starting NTP time sync in background...");
     displayManager.showMessage("Backend", "Connected", 2000);
-    Serial.println("[Main] Device ready - time sync will happen in background");
+
+    // Create async task for NTP time sync (8192 byte stack for HTTP + time operations)
+    if (ntpSyncTaskHandle == NULL) {
+        BaseType_t result = xTaskCreate(
+            ntpSyncTask,
+            "NTPSync",
+            8192,  // Stack size (bytes) - increased for NTP operations
+            NULL,
+            1,     // Priority
+            &ntpSyncTaskHandle
+        );
+
+        if (result != pdPASS) {
+            Serial.println("[Main] Failed to create NTP sync task");
+            ntpSyncTaskHandle = NULL;
+        }
+    }
 
     // Initialize last synced config (oldData = newData)
     lastSyncedConfig = deviceConfig;
@@ -445,19 +462,8 @@ void uploadTelemetryTask(void* parameter) {
         return;
     }
 
-    // Don't send data if time is not synced (timestamps would be invalid)
-    if (!apiClient.isTimeSynced()) {
-        Serial.println("[AsyncTask] Time not synced - attempting sync now...");
-        if (apiClient.syncTimeWithServer()) {
-            Serial.println("[AsyncTask] Time synced successfully");
-        } else {
-            Serial.println("[AsyncTask] Time sync failed - skipping telemetry upload");
-            activeServerTasks--;  // Decrement before exit
-            telemetryTaskHandle = NULL;
-            vTaskDelete(NULL);
-            return;
-        }
-    }
+    // Telemetry doesn't need time sync - it's just sensor data for monitoring
+    // Time sync is only needed for control/config uploads (conflict resolution)
 
     float waterLevel = levelCalculator.getWaterLevel();
     float currInflow = sensorManager.getCurrentInflow();
@@ -471,6 +477,36 @@ void uploadTelemetryTask(void* parameter) {
 
     activeServerTasks--;  // Decrement after completion
     telemetryTaskHandle = NULL;
+    vTaskDelete(NULL);
+}
+
+/**
+ * Async task: Sync time via NTP at boot
+ * Runs once at boot to synchronize device time with NTP servers
+ * If NTP fails (no internet), app can later sync time using phone's timestamp
+ */
+void ntpSyncTask(void* parameter) {
+    Serial.println("[AsyncTask] NTP time sync started");
+
+    // Don't attempt NTP sync in AP mode (no internet)
+    if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE) {
+        Serial.println("[AsyncTask] Cannot sync time - not in client mode (no internet)");
+        Serial.println("[AsyncTask] App can sync time using phone's timestamp when connected");
+        ntpSyncTaskHandle = NULL;
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Attempt NTP time sync
+    if (apiClient.syncTimeWithServer()) {
+        Serial.println("[AsyncTask] NTP time sync completed successfully");
+        displayManager.showMessage("Time Synced", "NTP", 2000);
+    } else {
+        Serial.println("[AsyncTask] NTP time sync failed - will retry later or use app sync");
+        displayManager.showMessage("Time Not Synced", "Use app", 2000);
+    }
+
+    ntpSyncTaskHandle = NULL;
     vTaskDelete(NULL);
 }
 

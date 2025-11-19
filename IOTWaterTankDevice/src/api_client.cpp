@@ -3,6 +3,7 @@
 #include "handle_control_data.h"
 #include "handle_config_data.h"
 #include "handle_telemetry_data.h"
+#include <time.h>
 
 // External handler instances (defined in main.cpp)
 extern ControlDataHandler controlHandler;
@@ -630,62 +631,51 @@ bool APIClient::uploadTelemetry(float waterLevel, float currInflow, int pumpStat
 // ============================================================================
 
 bool APIClient::syncTimeWithServer() {
-    if (!authenticated) {
-        Serial.println("[API] Not authenticated, cannot sync time");
-        return false;
+    Serial.println("[API] Syncing time via NTP...");
+
+    // Configure NTP - Use pool.ntp.org (similar to time.windows.com)
+    // GMT offset: 0 (we'll use UTC), Daylight offset: 0
+    const char* ntpServer1 = "pool.ntp.org";
+    const char* ntpServer2 = "time.nist.gov";
+    const long gmtOffset_sec = 0;       // UTC timezone
+    const int daylightOffset_sec = 0;   // No daylight saving
+
+    // Configure time sync with NTP servers
+    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer1, ntpServer2);
+
+    // Wait for time to sync (max 10 seconds)
+    Serial.println("[API] Waiting for NTP time sync...");
+    struct tm timeinfo;
+    int retries = 0;
+    const int maxRetries = 20;  // 20 x 500ms = 10 seconds max wait
+
+    while (!getLocalTime(&timeinfo) && retries < maxRetries) {
+        Serial.print(".");
+        delay(500);
+        retries++;
     }
-
-    Serial.println("[API] Syncing time with server...");
-
-    String url = String(API_TIME_SYNC) + "?deviceId=" + String(DEVICE_ID);
-    String response;
-
-    if (!httpRequest("GET", url, "", response)) {
-        Serial.println("[API] Failed to sync time");
-        return false;
-    }
-
-    // Debug: Print raw response (only if DEBUG_RESPONSE_API enabled)
-    DEBUG_RESPONSE_API_PRINTLN("[API] Time sync response:");
-    DEBUG_RESPONSE_API_PRINTLN(response);
-
-    // Parse server time from JSON response
-    StaticJsonDocument<2048> doc;
-    DeserializationError error = deserializeJson(doc, response);
-
-    if (error) {
-        Serial.println("[API] Failed to parse time sync response");
-        DEBUG_PRINTF("[API] Parse error: %s\n", error.c_str());
-        return false;
-    }
-
-    // Debug: Print parsed JSON (only if DEBUG_RESPONSE_API enabled)
-    DEBUG_RESPONSE_API_PRINTLN("[API] Parsed time sync JSON:");
-    #ifdef DEBUG_RESPONSE_API
-    serializeJsonPretty(doc, Serial);
     Serial.println();
-    #endif
 
-    // Extract server time (Unix timestamp in milliseconds)
-    // Backend returns numeric timestamp, not ISO 8601 string
-    // Use uint64_t because timestamp can exceed 32-bit unsigned long limit
-    uint64_t serverUnixTime = doc["serverTime"] | (uint64_t)0;
-
-    if (serverUnixTime == 0) {
-        Serial.println("[API] No serverTime in response or invalid value");
-        DEBUG_PRINTLN("[API] Available fields:");
-        #ifdef DEBUG_ENABLED
-        serializeJson(doc, Serial);
-        Serial.println();
-        #endif
+    if (retries >= maxRetries) {
+        Serial.println("[API] Failed to sync time via NTP - timeout");
         return false;
     }
+
+    // Get current time in Unix timestamp (seconds since epoch)
+    time_t now;
+    time(&now);
+
+    // Convert to milliseconds (backend expects milliseconds)
+    uint64_t ntpTimestamp = (uint64_t)now * 1000ULL;
 
     // Save sync information via ConnectionSyncManager
-    connSyncManager.setTimestamp(serverUnixTime);
+    connSyncManager.setTimestamp(ntpTimestamp);
 
-    Serial.println("[API] Time synced successfully");
-    Serial.printf("  Server Timestamp: %llu ms\n", serverUnixTime);
+    Serial.println("[API] Time synced successfully via NTP");
+    Serial.printf("  NTP Timestamp: %llu ms\n", ntpTimestamp);
+    Serial.printf("  Date/Time: %04d-%02d-%02d %02d:%02d:%02d UTC\n",
+                 timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
+                 timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
 
     return true;
 }
