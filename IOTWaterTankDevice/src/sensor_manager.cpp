@@ -1,4 +1,5 @@
 #include "sensor_manager.h"
+#include "calculate_level.h"
 
 SensorManager::SensorManager()
     : ultrasonicSensor(nullptr),
@@ -174,18 +175,11 @@ void SensorManager::update() {
     // Read new distance
     currentDistance = readDistance();
 
-    // Calculate water level (tankHeight - distance from top)
-    currentWaterLevel = tankHeight - currentDistance;
+    // Use level calculator to calculate water level
+    levelCalculator.updateLevel(currentDistance);
 
-    // Ensure water level is not negative
-    if (currentWaterLevel < 0) {
-        currentWaterLevel = 0;
-    }
-
-    // Ensure water level doesn't exceed tank height
-    if (currentWaterLevel > tankHeight) {
-        currentWaterLevel = tankHeight;
-    }
+    // Get calculated water level from level calculator
+    currentWaterLevel = levelCalculator.getWaterLevel();
 
     lastReadTime = currentTime;
 

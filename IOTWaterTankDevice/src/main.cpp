@@ -32,6 +32,7 @@
 #include "handle_control_data.h"
 #include "handle_config_data.h"
 #include "handle_telemetry_data.h"
+#include "calculate_level.h"
 
 // ============================================================================
 // GLOBAL OBJECTS
@@ -194,6 +195,11 @@ void onWiFiSave(const String& ssid, const String& password,
         // Try to fetch config from server (works even if registration failed)
         if (apiClient.fetchAndApplyServerConfig(deviceConfig)) {
             sensorManager.setTankConfig(
+                deviceConfig.tankHeight,
+                deviceConfig.tankWidth,
+                deviceConfig.tankShape
+            );
+            levelCalculator.setTankConfig(
                 deviceConfig.tankHeight,
                 deviceConfig.tankWidth,
                 deviceConfig.tankShape
@@ -408,8 +414,13 @@ bool connectToBackend() {
 
     configFetched = true;
 
-    // Apply configuration to sensor manager
+    // Apply configuration to sensor manager and level calculator
     sensorManager.setTankConfig(
+        deviceConfig.tankHeight,
+        deviceConfig.tankWidth,
+        deviceConfig.tankShape
+    );
+    levelCalculator.setTankConfig(
         deviceConfig.tankHeight,
         deviceConfig.tankWidth,
         deviceConfig.tankShape
@@ -461,7 +472,7 @@ void uploadTelemetryTask(void* parameter) {
         return;
     }
 
-    float waterLevel = sensorManager.getWaterLevel();
+    float waterLevel = levelCalculator.getWaterLevel();
     float currInflow = sensorManager.getCurrentInflow();
     int pumpStatus = relayController.getPumpStatus();
 
@@ -587,6 +598,11 @@ void fetchControlDataTask(void* parameter) {
                             deviceConfig.tankWidth,
                             deviceConfig.tankShape
                         );
+                        levelCalculator.setTankConfig(
+                            deviceConfig.tankHeight,
+                            deviceConfig.tankWidth,
+                            deviceConfig.tankShape
+                        );
 
                         displayManager.setTankSettings(
                             deviceConfig.tankHeight,
@@ -692,6 +708,11 @@ void fetchConfigFromServerTask(void* parameter) {
                     deviceConfig.tankWidth,
                     deviceConfig.tankShape
                 );
+                levelCalculator.setTankConfig(
+                    deviceConfig.tankHeight,
+                    deviceConfig.tankWidth,
+                    deviceConfig.tankShape
+                );
 
                 displayManager.setTankSettings(
                     deviceConfig.tankHeight,
@@ -787,6 +808,11 @@ void syncConfigToServerTask(void* parameter) {
                         deviceConfig.tankWidth,
                         deviceConfig.tankShape
                     );
+                    levelCalculator.setTankConfig(
+                        deviceConfig.tankHeight,
+                        deviceConfig.tankWidth,
+                        deviceConfig.tankShape
+                    );
                     displayManager.setTankSettings(
                         deviceConfig.tankHeight,
                         deviceConfig.tankWidth,
@@ -821,8 +847,8 @@ void syncConfigToServerTask(void* parameter) {
 void updateSensors() {
     sensorManager.update();
 
-    float waterLevel = sensorManager.getWaterLevel();
-    float waterLevelPercent = sensorManager.getWaterLevelPercent();
+    float waterLevel = levelCalculator.getWaterLevel();
+    float waterLevelPercent = levelCalculator.getWaterLevelPercent();
     float currInflow = sensorManager.getCurrentInflow();
 
     // Update relay controller with current water level
@@ -1063,8 +1089,8 @@ void fetchConfigFromServer() {
  * Update OLED display (every 0.5 seconds)
  */
 void updateDisplay() {
-    float waterLevel = sensorManager.getWaterLevel();
-    float waterLevelPercent = sensorManager.getWaterLevelPercent();
+    float waterLevel = levelCalculator.getWaterLevel();
+    float waterLevelPercent = levelCalculator.getWaterLevelPercent();
     bool pumpOn = relayController.isPumpOn();
     String pumpMode = relayController.getModeString();
     int rssi = getRSSI();
