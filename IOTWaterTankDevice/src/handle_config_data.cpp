@@ -108,40 +108,42 @@ void ConfigDataHandler::updateSelf(float self_upperThreshold, float self_lowerTh
                                     float self_tankHeight, float self_tankWidth,
                                     const String& self_tankShape, float self_usedTotal,
                                     float self_maxInflow, bool self_forceUpdate,
-                                    const String& self_ipAddress, bool self_autoUpdate) {
-    uint64_t now = millis();
+                                    const String& self_ipAddress, bool self_autoUpdate,
+                                    uint64_t timestamp) {
+    // Use provided timestamp (should be from apiClient.getCurrentTimestamp())
+    // This ensures timestamps are synchronized with server, not local millis()
 
     upperThreshold.value = self_upperThreshold;
-    upperThreshold.lastModified = now;
+    upperThreshold.lastModified = timestamp;
 
     lowerThreshold.value = self_lowerThreshold;
-    lowerThreshold.lastModified = now;
+    lowerThreshold.lastModified = timestamp;
 
     tankHeight.value = self_tankHeight;
-    tankHeight.lastModified = now;
+    tankHeight.lastModified = timestamp;
 
     tankWidth.value = self_tankWidth;
-    tankWidth.lastModified = now;
+    tankWidth.lastModified = timestamp;
 
     tankShape.value = self_tankShape;
-    tankShape.lastModified = now;
+    tankShape.lastModified = timestamp;
 
     usedTotal.value = self_usedTotal;
-    usedTotal.lastModified = now;
+    usedTotal.lastModified = timestamp;
 
     maxInflow.value = self_maxInflow;
-    maxInflow.lastModified = now;
+    maxInflow.lastModified = timestamp;
 
     forceUpdate.value = self_forceUpdate;
-    forceUpdate.lastModified = now;
+    forceUpdate.lastModified = timestamp;
 
     ipAddress.value = self_ipAddress;
-    ipAddress.lastModified = now;
+    ipAddress.lastModified = timestamp;
 
     autoUpdate.value = self_autoUpdate;
-    autoUpdate.lastModified = now;
+    autoUpdate.lastModified = timestamp;
 
-    DEBUG_PRINTLN("[ConfigHandler] Updated self");
+    DEBUG_PRINTLN("[ConfigHandler] Updated self with synchronized timestamp");
 }
 
 bool ConfigDataHandler::merge() {

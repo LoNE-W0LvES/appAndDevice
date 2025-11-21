@@ -56,7 +56,8 @@ public:
                     float self_tankHeight, float self_tankWidth,
                     const String& self_tankShape, float self_usedTotal,
                     float self_maxInflow, bool self_forceUpdate,
-                    const String& self_ipAddress, bool self_autoUpdate);
+                    const String& self_ipAddress, bool self_autoUpdate,
+                    uint64_t timestamp);
 
     // Perform 3-way merge - returns true if any value changed
     bool merge();

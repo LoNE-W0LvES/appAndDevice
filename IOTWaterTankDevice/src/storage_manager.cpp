@@ -394,11 +394,11 @@ bool StorageManager::loadDeviceConfig(float& upperThreshold, float& lowerThresho
         return false;
     }
 
-    upperThreshold = prefs.getFloat("upperThr", 95.0f);
-    lowerThreshold = prefs.getFloat("lowerThr", 20.0f);
-    tankHeight = prefs.getFloat("tankH", 0.0f);
-    tankWidth = prefs.getFloat("tankW", 0.0f);
-    tankShape = prefs.getString("tankShape", "");
+    upperThreshold = prefs.getFloat("upperThr", DEFAULT_UPPER_THRESHOLD);
+    lowerThreshold = prefs.getFloat("lowerThr", DEFAULT_LOWER_THRESHOLD);
+    tankHeight = prefs.getFloat("tankH", DEFAULT_TANK_HEIGHT);
+    tankWidth = prefs.getFloat("tankW", DEFAULT_TANK_WIDTH);
+    tankShape = prefs.getString("tankShape", "Cylindrical");
 
     closeNamespace();
 

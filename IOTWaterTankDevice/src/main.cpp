@@ -368,7 +368,8 @@ void initializeSystem() {
 
         // Update config handler with loaded values
         configHandler.updateSelf(upperThr, lowerThr, tankH, tankW, tankSh,
-                                 0.0f, 0.0f, false, "", true);
+                                 0.0f, 0.0f, false, "", true,
+                                 apiClient.getCurrentTimestamp());
 
         // Also update old deviceConfig for backward compatibility
         deviceConfig.upperThreshold = upperThr;
@@ -378,6 +379,12 @@ void initializeSystem() {
         deviceConfig.tankShape = tankSh;
     } else {
         Serial.println("[Main] No stored config - will fetch from server on connect");
+
+        // Initialize config handler with defaults to ensure timestamps are set
+        configHandler.updateSelf(DEFAULT_UPPER_THRESHOLD, DEFAULT_LOWER_THRESHOLD,
+                                 DEFAULT_TANK_HEIGHT, DEFAULT_TANK_WIDTH, "Cylindrical",
+                                 0.0f, 0.0f, false, "", true,
+                                 apiClient.getCurrentTimestamp());
     }
 
     // Initialize WiFi manager
