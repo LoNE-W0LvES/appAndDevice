@@ -12,7 +12,7 @@ void RelayController::begin() {
     pinMode(RELAY_PIN, OUTPUT);
     digitalWrite(RELAY_PIN, LOW); // Ensure pump is OFF at startup
 
-    preferences.begin(PREF_NAMESPACE, false);
+    // Load mode from NVS (opens/closes preferences internally)
     loadMode();
 
     Serial.println("[Relay] Relay controller initialized");
@@ -21,13 +21,34 @@ void RelayController::begin() {
 }
 
 void RelayController::loadMode() {
+    // Open preferences namespace for reading
+    if (!preferences.begin(PREF_NAMESPACE, true)) {
+        Serial.println("[Relay] Failed to open preferences for reading");
+        autoModeEnabled = true;  // Default to auto mode
+        currentMode = MODE_AUTO;
+        return;
+    }
+
     // Load saved auto mode preference
     autoModeEnabled = preferences.getBool(PREF_AUTO_MODE, true);
     currentMode = autoModeEnabled ? MODE_AUTO : MODE_MANUAL;
+
+    // Close preferences namespace
+    preferences.end();
 }
 
 void RelayController::saveMode() {
+    // Open preferences namespace for writing
+    if (!preferences.begin(PREF_NAMESPACE, false)) {
+        Serial.println("[Relay] Failed to open preferences for writing");
+        return;
+    }
+
+    // Save auto mode preference
     preferences.putBool(PREF_AUTO_MODE, currentMode == MODE_AUTO);
+
+    // Close preferences namespace
+    preferences.end();
 }
 
 void RelayController::applyPumpState(bool state) {

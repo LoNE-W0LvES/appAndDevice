@@ -325,12 +325,13 @@ void WebServer::handleGetControl(AsyncWebServerRequest* request) {
     pumpSwitch["value"] = controlHandler.getPumpSwitch();  // Use merged value
     pumpSwitch["lastModified"] = (unsigned long)controlHandler.getPumpSwitchTimestamp();
 
-    // Config Update Flag - Use handler's merged value
+    // Config Update Flag - Always return false for local/offline mode
+    // Only the server (via API) can set config_update to true
     JsonObject config_update = doc.createNestedObject("config_update");
     config_update["key"] = "config_update";
     config_update["label"] = "Configuration Update";
     config_update["type"] = "boolean";
-    config_update["value"] = controlHandler.getConfigUpdate();  // Use merged value
+    config_update["value"] = false;  // Always false - app cannot trigger server config fetch
     config_update["description"] = "When enabled, device will update its configuration from server";
     config_update["system"] = true;
     config_update["lastModified"] = (unsigned long)controlHandler.getConfigUpdateTimestamp();
@@ -379,12 +380,10 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
 
     // Extract values and timestamps from app
     bool hasPumpSwitch = doc.containsKey("pumpSwitch");
-    bool hasConfigUpdate = doc.containsKey("config_update");
+    // NOTE: config_update is IGNORED from app/webserver - only server can set it
 
     bool pumpSwitchValue = false;
     uint64_t pumpSwitchTs = 0;
-    bool configUpdateValue = false;
-    uint64_t configUpdateTs = 0;
 
     // Get current timestamp for values without explicit timestamps
     // IMPORTANT: Use current time, NOT 0! (0 would lose to API ts=0 in merge)
@@ -401,26 +400,15 @@ void WebServer::handlePostControl(AsyncWebServerRequest* request, uint8_t* data,
         }
     }
 
-    if (hasConfigUpdate) {
-        configUpdateValue = doc["config_update"]["value"] | false;
-        // If app provides timestamp, use it; otherwise use current time
-        // IMPORTANT: Check if lastModified field exists, don't use 0 as default!
-        if (doc["config_update"].containsKey("lastModified")) {
-            configUpdateTs = doc["config_update"]["lastModified"];
-        } else {
-            configUpdateTs = currentTime;  // Use current time if not provided
-        }
-    }
-
     // Update handler with values from Local (app webserver)
-    if (hasPumpSwitch || hasConfigUpdate) {
-        // Get current values to preserve fields not in request
-        bool currentPump = hasPumpSwitch ? pumpSwitchValue : controlHandler.getPumpSwitch();
-        bool currentConfig = hasConfigUpdate ? configUpdateValue : controlHandler.getConfigUpdate();
+    // NOTE: config_update is NOT updated from local - always preserve current value
+    if (hasPumpSwitch) {
+        // Preserve current config_update value (not changed by app)
+        bool currentConfig = controlHandler.getConfigUpdate();
         uint64_t currentPumpTs = hasPumpSwitch ? pumpSwitchTs : controlHandler.getPumpSwitchTimestamp();
-        uint64_t currentConfigTs = hasConfigUpdate ? configUpdateTs : controlHandler.getConfigUpdateTimestamp();
+        uint64_t currentConfigTs = controlHandler.getConfigUpdateTimestamp();
 
-        controlHandler.updateFromLocal(currentPump, currentPumpTs, currentConfig, currentConfigTs);
+        controlHandler.updateFromLocal(pumpSwitchValue, currentPumpTs, currentConfig, currentConfigTs);
     }
 
     // Perform 3-way merge (API vs Local vs Self)
