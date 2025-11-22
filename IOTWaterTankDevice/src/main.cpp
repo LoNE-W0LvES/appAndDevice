@@ -1544,7 +1544,7 @@ void setup() {
 }
 
 // ============================================================================
-// MIDNIGHT REBOOT FOR NTP RESYNC
+// 24-HOUR UPTIME REBOOT FOR NTP RESYNC
 // ============================================================================
 
 /**
@@ -1571,39 +1571,35 @@ bool checkInternetConnectivity() {
 }
 
 /**
- * Check if it's past midnight and schedule reboot
- * Reboot reduces NTP time drift by resyncing after midnight
+ * Check if device has been running for 24 hours and schedule reboot
+ * Reboot reduces NTP time drift by resyncing after 24 hours
  * Only reboots if internet is available (so NTP sync works after reboot)
+ *
+ * Uses millis() uptime instead of timestamp hour to avoid reboot loops:
+ * - After 24 hours uptime, set needReboot = true (once)
+ * - After reboot, millis() resets to 0, won't trigger again for 24 hours
  */
-void checkMidnightReboot() {
+void check24HourReboot() {
     // Only check if we have a synced timestamp
     if (!apiClient.isTimeSynced()) {
         return;
     }
 
-    uint64_t currentTimestamp = apiClient.getCurrentTimestamp();
+    // Check if device has been running for 24 hours (86400000 milliseconds)
+    const unsigned long TWENTY_FOUR_HOURS = 86400000UL;  // 24 * 60 * 60 * 1000
 
-    // Convert timestamp to hour of day (0-23)
-    // Timestamp is in milliseconds since epoch
-    uint64_t currentHour = (currentTimestamp / 3600000) % 24;
+    unsigned long currentUptime = millis();
 
-    // Check if we've crossed midnight (hour 0)
-    // We check once per hour to avoid multiple checks
-    static uint64_t lastCheckedHour = 25;  // Start with invalid hour
+    // If uptime > 24 hours and we haven't set needReboot yet
+    if (currentUptime >= TWENTY_FOUR_HOURS && !needReboot) {
+        Serial.println("[Main] ========================================");
+        Serial.println("[Main] 24 HOUR UPTIME REACHED - Scheduling reboot");
+        Serial.println("[Main] ========================================");
+        Serial.printf("[Main] Uptime: %lu ms (%.1f hours)\n", currentUptime, currentUptime / 3600000.0);
+        Serial.println("[Main] Reboot will resync NTP and reduce time drift");
 
-    if (currentHour != lastCheckedHour) {
-        lastCheckedHour = currentHour;
-
-        // If it's past midnight (hour 0) and we haven't set needReboot yet
-        if (currentHour == 0 && !needReboot) {
-            Serial.println("[Main] ========================================");
-            Serial.println("[Main] MIDNIGHT DETECTED - Scheduling reboot");
-            Serial.println("[Main] ========================================");
-            Serial.println("[Main] Reboot will resync NTP and reduce time drift");
-
-            needReboot = true;
-            displayManager.showMessage("Midnight", "Reboot pending", 3000);
-        }
+        needReboot = true;
+        displayManager.showMessage("24h Uptime", "Reboot pending", 3000);
     }
 
     // If reboot is needed, check internet and reboot
@@ -1728,11 +1724,11 @@ void loop() {
             checkOTAUpdate();
         }
 
-        // Check midnight reboot (every minute to avoid spam)
-        // Reduces NTP drift by resyncing after daily reboot
+        // Check 24-hour uptime reboot (every minute to avoid spam)
+        // Reduces NTP drift by resyncing after 24-hour uptime
         if (currentTime - lastMidnightCheck >= 60000) {  // Check every minute
             lastMidnightCheck = currentTime;
-            checkMidnightReboot();
+            check24HourReboot();
         }
     }
 
