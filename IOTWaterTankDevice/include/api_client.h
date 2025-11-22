@@ -39,9 +39,6 @@ public:
     // Login device with username/password and obtain JWT token
     bool loginDevice(const String& username, const String& password);
 
-    // Register device and obtain JWT token
-    bool registerDevice();
-
     // Refresh JWT token (extends session)
     bool refreshToken();
 

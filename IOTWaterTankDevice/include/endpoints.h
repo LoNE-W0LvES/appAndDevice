@@ -144,7 +144,6 @@
 // LEGACY COMPATIBILITY ALIASES (deprecated - use new endpoints above)
 // ============================================================================
 
-#define API_REGISTER                 API_DEVICE_LOGIN              // Legacy: Use login instead
 #define API_CONFIG                   API_DEVICE_CONFIG             // Legacy alias
 #define API_CONTROL                  API_DEVICE_CONTROL            // Legacy alias
 #define API_TELEMETRY                API_DEVICE_TELEMETRY          // Legacy alias
