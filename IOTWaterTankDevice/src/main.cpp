@@ -75,10 +75,9 @@ bool systemInitialized = false;
 bool configFetched = false;
 bool deviceIsOnline = false;       // True when NTP sync successful and device can communicate with server
 bool initial_config_update = false; // True after NTP sync until first config fetch completes
-bool needReboot = false;           // True after midnight until device restarts
 int failedCount = 0;               // Count consecutive server request failures (reset deviceIsOnline after 10)
 unsigned long lastNTPRetry = 0;    // Track NTP retry attempts when offline
-unsigned long lastMidnightCheck = 0; // Track when we last checked for midnight
+unsigned long last24HourCheck = 0; // Track when we last checked for 24-hour reboot
 
 // FreeRTOS task management
 SemaphoreHandle_t configMutex = NULL;  // Protect deviceConfig and lastSyncedConfig
@@ -1538,7 +1537,7 @@ void setup() {
     lastConfigCheck = millis();
     lastOTACheck = millis();
     lastDisplayUpdate = millis();
-    lastMidnightCheck = millis();
+    last24HourCheck = millis();
 
     Serial.println("[Main] Entering main loop...\n");
 }
@@ -1571,13 +1570,14 @@ bool checkInternetConnectivity() {
 }
 
 /**
- * Check if device has been running for 24 hours and schedule reboot
+ * Check if device has been running for 24 hours and reboot
  * Reboot reduces NTP time drift by resyncing after 24 hours
  * Only reboots if internet is available (so NTP sync works after reboot)
  *
- * Uses millis() uptime instead of timestamp hour to avoid reboot loops:
- * - After 24 hours uptime, set needReboot = true (once)
- * - After reboot, millis() resets to 0, won't trigger again for 24 hours
+ * Uses millis() uptime to detect 24-hour runtime:
+ * - Check if millis() >= 24 hours
+ * - If yes and internet available → reboot immediately
+ * - After reboot, millis() resets to 0, won't trigger for another 24 hours
  */
 void check24HourReboot() {
     // Only check if we have a synced timestamp
@@ -1590,31 +1590,23 @@ void check24HourReboot() {
 
     unsigned long currentUptime = millis();
 
-    // If uptime > 24 hours and we haven't set needReboot yet
-    if (currentUptime >= TWENTY_FOUR_HOURS && !needReboot) {
+    // If uptime >= 24 hours, check internet and reboot
+    if (currentUptime >= TWENTY_FOUR_HOURS) {
         Serial.println("[Main] ========================================");
-        Serial.println("[Main] 24 HOUR UPTIME REACHED - Scheduling reboot");
+        Serial.println("[Main] 24 HOUR UPTIME REACHED");
         Serial.println("[Main] ========================================");
         Serial.printf("[Main] Uptime: %lu ms (%.1f hours)\n", currentUptime, currentUptime / 3600000.0);
-        Serial.println("[Main] Reboot will resync NTP and reduce time drift");
-
-        needReboot = true;
-        displayManager.showMessage("24h Uptime", "Reboot pending", 3000);
-    }
-
-    // If reboot is needed, check internet and reboot
-    if (needReboot) {
-        Serial.println("[Main] Reboot pending - checking internet connectivity...");
+        Serial.println("[Main] Checking internet connectivity before reboot...");
 
         if (checkInternetConnectivity()) {
             Serial.println("[Main] Internet available - rebooting now...");
             Serial.println("[Main] Device will resync NTP after reboot");
             displayManager.showMessage("Rebooting", "NTP resync", 2000);
             delay(2000);
-            ESP.restart();
+            ESP.restart();  // Reboot → millis() resets to 0
         } else {
-            Serial.println("[Main] No internet - waiting for connectivity before reboot");
-            // needReboot stays true, will check again next time
+            Serial.println("[Main] No internet - will retry in 1 minute");
+            // Will check again in 1 minute (via main loop)
         }
     }
 }
@@ -1726,8 +1718,8 @@ void loop() {
 
         // Check 24-hour uptime reboot (every minute to avoid spam)
         // Reduces NTP drift by resyncing after 24-hour uptime
-        if (currentTime - lastMidnightCheck >= 60000) {  // Check every minute
-            lastMidnightCheck = currentTime;
+        if (currentTime - last24HourCheck >= 60000) {  // Check every minute
+            last24HourCheck = currentTime;
             check24HourReboot();
         }
     }
