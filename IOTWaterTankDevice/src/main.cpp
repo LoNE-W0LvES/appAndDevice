@@ -19,6 +19,7 @@
  */
 
 #include <Arduino.h>
+#include <ESP32Ping.h>
 #include "config.h"
 #include "storage_manager.h"
 #include "wifi_manager.h"
@@ -74,8 +75,10 @@ bool systemInitialized = false;
 bool configFetched = false;
 bool deviceIsOnline = false;       // True when NTP sync successful and device can communicate with server
 bool initial_config_update = false; // True after NTP sync until first config fetch completes
+bool needReboot = false;           // True after midnight until device restarts
 int failedCount = 0;               // Count consecutive server request failures (reset deviceIsOnline after 10)
 unsigned long lastNTPRetry = 0;    // Track NTP retry attempts when offline
+unsigned long lastMidnightCheck = 0; // Track when we last checked for midnight
 
 // FreeRTOS task management
 SemaphoreHandle_t configMutex = NULL;  // Protect deviceConfig and lastSyncedConfig
@@ -1535,8 +1538,89 @@ void setup() {
     lastConfigCheck = millis();
     lastOTACheck = millis();
     lastDisplayUpdate = millis();
+    lastMidnightCheck = millis();
 
     Serial.println("[Main] Entering main loop...\n");
+}
+
+// ============================================================================
+// MIDNIGHT REBOOT FOR NTP RESYNC
+// ============================================================================
+
+/**
+ * Check internet connectivity by pinging Google DNS
+ * Returns true if internet is reachable
+ */
+bool checkInternetConnectivity() {
+    if (!isWiFiConnected() || getWiFiMode() != WIFI_CLIENT_MODE) {
+        return false;
+    }
+
+    // Ping Google DNS (8.8.8.8) to check internet connectivity
+    Serial.println("[Main] Checking internet connectivity (ping 8.8.8.8)...");
+
+    bool success = Ping.ping("8.8.8.8", 3);  // 3 attempts
+
+    if (success) {
+        Serial.println("[Main] Internet connectivity: OK");
+    } else {
+        Serial.println("[Main] Internet connectivity: FAILED");
+    }
+
+    return success;
+}
+
+/**
+ * Check if it's past midnight and schedule reboot
+ * Reboot reduces NTP time drift by resyncing after midnight
+ * Only reboots if internet is available (so NTP sync works after reboot)
+ */
+void checkMidnightReboot() {
+    // Only check if we have a synced timestamp
+    if (!apiClient.isTimeSynced()) {
+        return;
+    }
+
+    uint64_t currentTimestamp = apiClient.getCurrentTimestamp();
+
+    // Convert timestamp to hour of day (0-23)
+    // Timestamp is in milliseconds since epoch
+    uint64_t currentHour = (currentTimestamp / 3600000) % 24;
+
+    // Check if we've crossed midnight (hour 0)
+    // We check once per hour to avoid multiple checks
+    static uint64_t lastCheckedHour = 25;  // Start with invalid hour
+
+    if (currentHour != lastCheckedHour) {
+        lastCheckedHour = currentHour;
+
+        // If it's past midnight (hour 0) and we haven't set needReboot yet
+        if (currentHour == 0 && !needReboot) {
+            Serial.println("[Main] ========================================");
+            Serial.println("[Main] MIDNIGHT DETECTED - Scheduling reboot");
+            Serial.println("[Main] ========================================");
+            Serial.println("[Main] Reboot will resync NTP and reduce time drift");
+
+            needReboot = true;
+            displayManager.showMessage("Midnight", "Reboot pending", 3000);
+        }
+    }
+
+    // If reboot is needed, check internet and reboot
+    if (needReboot) {
+        Serial.println("[Main] Reboot pending - checking internet connectivity...");
+
+        if (checkInternetConnectivity()) {
+            Serial.println("[Main] Internet available - rebooting now...");
+            Serial.println("[Main] Device will resync NTP after reboot");
+            displayManager.showMessage("Rebooting", "NTP resync", 2000);
+            delay(2000);
+            ESP.restart();
+        } else {
+            Serial.println("[Main] No internet - waiting for connectivity before reboot");
+            // needReboot stays true, will check again next time
+        }
+    }
 }
 
 void loop() {
@@ -1642,6 +1726,13 @@ void loop() {
         if (currentTime - lastOTACheck >= OTA_CHECK_INTERVAL) {
             lastOTACheck = currentTime;
             checkOTAUpdate();
+        }
+
+        // Check midnight reboot (every minute to avoid spam)
+        // Reduces NTP drift by resyncing after daily reboot
+        if (currentTime - lastMidnightCheck >= 60000) {  // Check every minute
+            lastMidnightCheck = currentTime;
+            checkMidnightReboot();
         }
     }
 
