@@ -73,6 +73,7 @@ unsigned long lastDisplayUpdate = 0;
 bool systemInitialized = false;
 bool configFetched = false;
 bool deviceIsOnline = false;       // True when NTP sync successful and device can communicate with server
+bool initial_config_update = false; // True after NTP sync until first config fetch completes
 int failedCount = 0;               // Count consecutive server request failures (reset deviceIsOnline after 10)
 unsigned long lastNTPRetry = 0;    // Track NTP retry attempts when offline
 
@@ -321,7 +322,11 @@ void finalizeNTP(uint64_t timestamp) {
     deviceIsOnline = true;
     failedCount = 0;  // Reset failure counter
 
+    // Set initial_config_update flag to trigger first config fetch
+    initial_config_update = true;
+
     Serial.println("[Main] Device is now ONLINE");
+    Serial.println("[Main] initial_config_update flag set - will fetch config from server");
     displayManager.showMessage("Online", "Internet OK", 2000);
 }
 
@@ -531,6 +536,12 @@ bool connectToBackend() {
 
     if (apiClient.fetchAndApplyServerConfig(deviceConfig, &configChanged, &deviceWon)) {
         Serial.println("[Main] Config fetched and merged successfully");
+
+        // Clear initial_config_update flag after successful initial fetch
+        if (initial_config_update) {
+            Serial.println("[Main] Initial config fetch completed - clearing initial_config_update flag");
+            initial_config_update = false;
+        }
 
         // If values changed after merge, apply to system components
         if (configChanged) {
@@ -831,6 +842,12 @@ void fetchControlDataTask(void* parameter) {
                 DeviceConfig previousConfig = deviceConfig;
 
                 if (apiClient.fetchAndApplyServerConfig(deviceConfig)) {
+                    // Clear initial_config_update flag after successful fetch
+                    if (initial_config_update) {
+                        Serial.println("[AsyncTask] Initial config fetch completed - clearing initial_config_update flag");
+                        initial_config_update = false;
+                    }
+
                     // Check if values actually changed during merge
                     bool valuesChanged = deviceConfig.valuesChanged(previousConfig);
 
@@ -966,6 +983,13 @@ void fetchConfigFromServerTask(void* parameter) {
         // Fetch latest config from server
         if (apiClient.fetchAndApplyServerConfig(deviceConfig)) {
             failedCount = 0;  // Reset failure counter on success
+
+            // Clear initial_config_update flag after successful first fetch
+            if (initial_config_update) {
+                Serial.println("[AsyncTask] Initial config fetch completed - clearing initial_config_update flag");
+                initial_config_update = false;
+            }
+
             // Check if values actually changed during merge
             bool valuesChanged = deviceConfig.valuesChanged(previousConfig);
 
@@ -1594,15 +1618,17 @@ void loop() {
             uploadTelemetry();
         }
 
-        // Fetch config from server periodically (every 30 seconds)
-        // Note: Sync TO server is now immediate (triggered by callback when config changes)
-        // Only fetch if auto_update is enabled (config_update command always works regardless)
+        // Fetch config from server (every 30 seconds) if needed
+        // Only fetch if:
+        // 1. initial_config_update is true (after NTP sync on first boot), OR
+        // 2. config_update flag is set by server (checked in control data fetch every 5 min)
+        // Note: auto_update is for firmware OTA updates, NOT config updates
         if (currentTime - lastConfigCheck >= TELEMETRY_UPLOAD_INTERVAL) {
             lastConfigCheck = currentTime;
-            if (deviceConfig.auto_update) {
+            // Check if initial config fetch is needed after NTP sync
+            if (apiClient.isTimeSynced() && initial_config_update) {
+                Serial.println("[Main] Triggering initial config fetch after NTP sync");
                 fetchConfigFromServer();
-            } else {
-                Serial.println("[Main] Skipping periodic config fetch - auto_update disabled");
             }
         }
 
