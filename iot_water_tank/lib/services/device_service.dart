@@ -267,7 +267,7 @@ class DeviceService {
     }
   }
 
-  /// Update device configuration and set config_update flag
+  /// Update device configuration (config_update flag disabled)
   Future<Device> updateDeviceConfig(
     String deviceId,
     Map<String, DeviceConfigParameter> deviceConfig,
@@ -283,25 +283,27 @@ class DeviceService {
     }
 
     try {
+      // DISABLED: No longer setting config_update flag when saving device config
       // Prepare the config_update flag with current timestamp
-      final configUpdateFlag = ControlData(
-        key: 'config_update',
-        label: 'Configuration Update',
-        type: 'boolean',
-        value: true,
-        defaultValue: true,
-        lastModified: DateTime.now().millisecondsSinceEpoch,
-        system: true,
-      );
+      // final configUpdateFlag = ControlData(
+      //   key: 'config_update',
+      //   label: 'Configuration Update',
+      //   type: 'boolean',
+      //   value: true,
+      //   defaultValue: true,
+      //   lastModified: DateTime.now().millisecondsSinceEpoch,
+      //   system: true,
+      // );
 
-      // Prepare payload with both deviceConfig and controlData
+      // Prepare payload with only deviceConfig (no controlData update)
       final payload = {
         'deviceConfig': deviceConfig.map(
           (key, value) => MapEntry(key, value.toJson()),
         ),
-        'controlData': {
-          'config_update': configUpdateFlag.toJson(),
-        },
+        // DISABLED: No longer updating config_update flag
+        // 'controlData': {
+        //   'config_update': configUpdateFlag.toJson(),
+        // },
       };
 
       final response = await _apiClient.patch(
